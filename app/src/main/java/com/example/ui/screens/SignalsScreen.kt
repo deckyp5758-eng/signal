@@ -468,12 +468,36 @@ fun ActiveSignalHeroCard(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Quick instruction note
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Target Level & SL",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Tap 📋 untuk salin ke MT5",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = CyanEma
+                        )
+                    }
+
+                    Divider(color = DarkBorder, thickness = 0.5.dp)
+
                     // SL Row
                     TargetPriceRow(
                         label = "Stop Loss (SL)",
                         price = instrument.formatPrice(signal.stopLoss),
+                        rawNumber = instrument.formatPrice(signal.stopLoss),
                         pips = "-${"%.1f".format(signal.slPips)} pips",
-                        color = SellRed
+                        color = SellRed,
+                        onCopyRaw = { raw -> onCopySignal(raw, "Stop Loss (SL)") }
                     )
 
                     Divider(color = DarkBorder, thickness = 0.5.dp)
@@ -482,29 +506,93 @@ fun ActiveSignalHeroCard(
                     TargetPriceRow(
                         label = "Take Profit 1 (R:R 1:1)",
                         price = instrument.formatPrice(signal.takeProfit1),
+                        rawNumber = instrument.formatPrice(signal.takeProfit1),
                         pips = "+${"%.1f".format(signal.tp1Pips)} pips",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 1 (TP1)") }
                     )
 
                     // TP2 Row
                     TargetPriceRow(
                         label = "Take Profit 2 (R:R 1:1.8)",
                         price = instrument.formatPrice(signal.takeProfit2),
+                        rawNumber = instrument.formatPrice(signal.takeProfit2),
                         pips = "+${"%.1f".format(signal.tp2Pips)} pips",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 2 (TP2)") }
                     )
 
                     // TP3 Row
                     TargetPriceRow(
                         label = "Take Profit 3 (R:R 1:2.6)",
                         price = instrument.formatPrice(signal.takeProfit3),
+                        rawNumber = instrument.formatPrice(signal.takeProfit3),
                         pips = "+${"%.1f".format(signal.tp3Pips)} pips",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 3 (TP3)") }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Quick 1-Tap Copy Chips for MetaTrader 5 (MT5 / MT4)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "⚡ Salin Cepat untuk MetaTrader (1x Klik Langsung Paste):",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Copy SL chip
+                    FilledTonalButton(
+                        onClick = { onCopySignal(instrument.formatPrice(signal.stopLoss), "Stop Loss (SL)") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = SellRed.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(34.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = SellRed, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("SL: ${instrument.formatPrice(signal.stopLoss)}", color = SellRed, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    // Copy TP1 chip
+                    FilledTonalButton(
+                        onClick = { onCopySignal(instrument.formatPrice(signal.takeProfit1), "Take Profit 1 (TP1)") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = BuyGreen.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(34.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BuyGreen, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("TP1: ${instrument.formatPrice(signal.takeProfit1)}", color = BuyGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    // Copy Entry chip
+                    FilledTonalButton(
+                        onClick = { onCopySignal(instrument.formatPrice(signal.entryPrice), "Harga Entry") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = CyanEma.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(34.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = CyanEma, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Entry", color = CyanEma, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Signal Analysis Reason
             Surface(
@@ -534,73 +622,65 @@ fun ActiveSignalHeroCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Buttons Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Action Button: Apply to Risk Manager
+            Button(
+                onClick = { onApplyToRiskManager(signal) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("btn_apply_risk"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
             ) {
-                // Copy Signal Button
-                OutlinedButton(
-                    onClick = {
-                        val text = """
-                            ${signal.action.badgeText} ${instrument.symbol}
-                            Entry: ${instrument.formatPrice(signal.entryPrice)}
-                            SL: ${instrument.formatPrice(signal.stopLoss)}
-                            TP1: ${instrument.formatPrice(signal.takeProfit1)}
-                            TP2: ${instrument.formatPrice(signal.takeProfit2)}
-                            TP3: ${instrument.formatPrice(signal.takeProfit3)}
-                        """.trimIndent()
-                        onCopySignal(text, "Sinyal ${instrument.symbol}")
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("btn_copy_signal"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Salin SL/TP", fontSize = 12.sp)
-                }
-
-                // Apply to Risk Manager Button
-                Button(
-                    onClick = { onApplyToRiskManager(signal) },
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .testTag("btn_apply_risk"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Hitung Lot & Risiko", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                }
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Hitung Lot & Manajemen Risiko",
+                    fontSize = 13.sp,
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
 }
 
 @Composable
-fun TargetPriceRow(label: String, price: String, pips: String, color: Color) {
+fun TargetPriceRow(
+    label: String,
+    price: String,
+    rawNumber: String = price,
+    pips: String,
+    color: Color,
+    onCopyRaw: ((String) -> Unit)? = null
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onCopyRaw != null) {
+                    Modifier.clickable { onCopyRaw(rawNumber) }
+                } else Modifier
+            )
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = TextSecondary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -622,6 +702,24 @@ fun TargetPriceRow(label: String, price: String, pips: String, color: Color) {
                     color = color,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
+            }
+            if (onCopyRaw != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable { onCopyRaw(rawNumber) }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Salin $label",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
             }
         }
     }

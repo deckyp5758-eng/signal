@@ -304,10 +304,18 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun copyToClipboard(text: String, label: String = "Sinyal Scalping") {
+        val cleanText = text.trim()
         val clipboard = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText(label, text)
+        val clip = ClipData.newPlainText(label, cleanText)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(getApplication(), "Tersalin: $label", Toast.LENGTH_SHORT).show()
+        
+        val isSingleNumber = cleanText.matches(Regex("^[0-9]+(\\.[0-9]+)?$"))
+        val toastMsg = if (isSingleNumber) {
+            "✅ $label ($cleanText) tersalin! Siap paste di MT5/MT4"
+        } else {
+            "✅ $label tersalin ke Clipboard!"
+        }
+        Toast.makeText(getApplication(), toastMsg, Toast.LENGTH_SHORT).show()
     }
 
     fun updateGitHubRepoConfig(owner: String, repo: String) {

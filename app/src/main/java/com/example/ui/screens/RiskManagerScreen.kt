@@ -458,22 +458,7 @@ fun RiskManagerScreen(
             AutoCalculatedResultCard(
                 calc = riskCalculation,
                 onSavePlan = { onSaveTradePlan(riskCalculation) },
-                onCopyAll = {
-                    val curr = riskCalculation.accountCurrency
-                    val text = """
-                        Rencana Scalping ${riskCalculation.action.badgeText} ${riskCalculation.instrument.symbol}
-                        Akun: ${riskCalculation.accountType.displayName} | Mata Uang: ${curr.code}
-                        Modal: ${curr.formatMoney(riskCalculation.accountBalance)} | Resiko: ${riskCalculation.riskPercent}% (${curr.formatMoney(riskCalculation.riskAmountCurrency)})
-                        Pip Value: ${curr.formatMoney(riskCalculation.pipValuePerLotCurrency)} / 1.0 Lot
-                        Rekomendasi Lot: ${riskCalculation.lotSize} Lot
-                        Entry: ${riskCalculation.instrument.formatPrice(riskCalculation.entryPrice)}
-                        Stop Loss: ${riskCalculation.instrument.formatPrice(riskCalculation.stopLossPrice)} (Max Loss -${curr.formatMoney(riskCalculation.maxLossCurrency)})
-                        Take Profit 1: ${riskCalculation.instrument.formatPrice(riskCalculation.takeProfit1)} (Profit +${curr.formatMoney(riskCalculation.potentialProfit1Currency)})
-                        Take Profit 2: ${riskCalculation.instrument.formatPrice(riskCalculation.takeProfit2)} (Profit +${curr.formatMoney(riskCalculation.potentialProfit2Currency)})
-                        Take Profit 3: ${riskCalculation.instrument.formatPrice(riskCalculation.takeProfit3)} (Profit +${curr.formatMoney(riskCalculation.potentialProfit3Currency)})
-                    """.trimIndent()
-                    onCopyText(text, "Rencana Trading ${riskCalculation.instrument.symbol}")
-                }
+                onCopySingle = onCopyText
             )
         }
 
@@ -534,8 +519,14 @@ fun RiskManagerScreen(
 fun AutoCalculatedResultCard(
     calc: RiskCalculation,
     onSavePlan: () -> Unit,
-    onCopyAll: () -> Unit
+    onCopySingle: (String, String) -> Unit
 ) {
+    val lotFormatted = String.format(java.util.Locale.US, "%.2f", calc.lotSize)
+    val slFormatted = calc.instrument.formatPrice(calc.stopLossPrice)
+    val tp1Formatted = calc.instrument.formatPrice(calc.takeProfit1)
+    val tp2Formatted = calc.instrument.formatPrice(calc.takeProfit2)
+    val entryFormatted = calc.instrument.formatPrice(calc.entryPrice)
+
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -548,7 +539,7 @@ fun AutoCalculatedResultCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -613,14 +604,14 @@ fun AutoCalculatedResultCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "${calc.lotSize} Lot",
+                                text = "$lotFormatted Lot",
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             FilledTonalButton(
                                 onClick = {
-                                    onCopyAll()
+                                    onCopySingle(lotFormatted, "Lot Size")
                                 },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                 shape = RoundedCornerShape(6.dp),
@@ -632,7 +623,7 @@ fun AutoCalculatedResultCard(
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Salin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(text = "Salin Lot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -656,6 +647,59 @@ fun AutoCalculatedResultCard(
                 }
             }
 
+            // Quick 1-Tap Copy Chips for MT5 / MT4
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "⚡ Salin Cepat untuk MT5 (1x Tap Siap Paste):",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { onCopySingle(lotFormatted, "Lot Size") },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = GoldPrimary.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Lot: $lotFormatted", color = GoldPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    FilledTonalButton(
+                        onClick = { onCopySingle(slFormatted, "Stop Loss (SL)") },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = SellRed.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = SellRed, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("SL: $slFormatted", color = SellRed, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+
+                    FilledTonalButton(
+                        onClick = { onCopySingle(tp1Formatted, "Take Profit 1 (TP1)") },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = BuyGreen.copy(alpha = 0.18f)),
+                        modifier = Modifier.weight(1f).height(32.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BuyGreen, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("TP: $tp1Formatted", color = BuyGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
+            }
+
             // SL and TP Levels breakdown
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -668,80 +712,109 @@ fun AutoCalculatedResultCard(
                 ) {
                     LevelItemRow(
                         label = "Stop Loss (SL Otomatis)",
-                        price = calc.instrument.formatPrice(calc.stopLossPrice),
+                        price = slFormatted,
+                        rawNumber = slFormatted,
                         impact = "-${calc.accountCurrency.formatMoney(calc.maxLossCurrency)} (-${"%.1f".format(calc.slPips)} pips)",
-                        color = SellRed
+                        color = SellRed,
+                        onCopyRaw = { raw -> onCopySingle(raw, "Stop Loss (SL)") }
                     )
 
                     Divider(color = DarkBorder, thickness = 0.5.dp)
 
                     LevelItemRow(
                         label = "Take Profit 1 (Target Konservatif)",
-                        price = calc.instrument.formatPrice(calc.takeProfit1),
+                        price = tp1Formatted,
+                        rawNumber = tp1Formatted,
                         impact = "+${calc.accountCurrency.formatMoney(calc.potentialProfit1Currency)} (+${"%.1f".format(calc.tp1Pips)} pips)",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySingle(raw, "Take Profit 1 (TP1)") }
                     )
 
                     LevelItemRow(
                         label = "Take Profit 2 (Target Standar R:R)",
-                        price = calc.instrument.formatPrice(calc.takeProfit2),
+                        price = tp2Formatted,
+                        rawNumber = tp2Formatted,
                         impact = "+${calc.accountCurrency.formatMoney(calc.potentialProfit2Currency)} (+${"%.1f".format(calc.tp2Pips)} pips)",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySingle(raw, "Take Profit 2 (TP2)") }
                     )
 
                     LevelItemRow(
                         label = "Take Profit 3 (Target Runner/Ekstra)",
                         price = calc.instrument.formatPrice(calc.takeProfit3),
+                        rawNumber = calc.instrument.formatPrice(calc.takeProfit3),
                         impact = "+${calc.accountCurrency.formatMoney(calc.potentialProfit3Currency)} (+${"%.1f".format(calc.tp3Pips)} pips)",
-                        color = BuyGreen
+                        color = BuyGreen,
+                        onCopyRaw = { raw -> onCopySingle(raw, "Take Profit 3 (TP3)") }
                     )
                 }
             }
 
-            // Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Action Button: Save to Trading Plan Journal
+            Button(
+                onClick = onSavePlan,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("btn_save_trade_plan"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
             ) {
-                OutlinedButton(
-                    onClick = onCopyAll,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("btn_copy_risk_levels"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Salin Level", fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = onSavePlan,
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .testTag("btn_save_trade_plan"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
-                ) {
-                    Icon(imageVector = Icons.Default.BookmarkAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Simpan ke Jurnal", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                }
+                Icon(imageVector = Icons.Default.BookmarkAdd, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "Simpan Rencana ke Jurnal", fontSize = 13.sp, color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-fun LevelItemRow(label: String, price: String, impact: String, color: Color) {
+fun LevelItemRow(
+    label: String,
+    price: String,
+    rawNumber: String = price,
+    impact: String,
+    color: Color,
+    onCopyRaw: ((String) -> Unit)? = null
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onCopyRaw != null) {
+                    Modifier.clickable { onCopyRaw(rawNumber) }
+                } else Modifier
+            )
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
             Text(text = label, fontSize = 11.sp, color = TextSecondary)
-            Text(text = price, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(text = price, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color)
+                if (onCopyRaw != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clickable { onCopyRaw(rawNumber) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Salin $label",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
         Text(text = impact, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
@@ -756,6 +829,12 @@ fun TradePlanItem(
     val isBuy = plan.action == "BUY"
     val col = if (isBuy) BuyGreen else SellRed
     val timeStr = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(plan.timestamp))
+    val isGold = plan.instrumentSymbol.contains("XAU")
+    val decDigits = if (isGold) 2 else 5
+    val slStr = String.format(java.util.Locale.US, "%.${decDigits}f", plan.stopLossPrice)
+    val tpStr = String.format(java.util.Locale.US, "%.${decDigits}f", plan.takeProfitPrice)
+    val entryStr = String.format(java.util.Locale.US, "%.${decDigits}f", plan.entryPrice)
+    val lotStr = String.format(java.util.Locale.US, "%.2f", plan.lotSize)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -789,7 +868,7 @@ fun TradePlanItem(
                     )
                 }
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -803,7 +882,7 @@ fun TradePlanItem(
                         Text(text = timeStr, fontSize = 10.sp, color = TextTertiary)
                     }
                     Text(
-                        text = "Entry: ${plan.entryPrice} | SL: ${plan.stopLossPrice} | TP: ${plan.takeProfitPrice}",
+                        text = "Entry: $entryStr | SL: $slStr | TP: $tpStr",
                         fontSize = 11.sp,
                         color = TextSecondary
                     )
@@ -812,26 +891,46 @@ fun TradePlanItem(
                         fontSize = 10.sp,
                         color = GoldPrimary
                     )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = SellRed.copy(alpha = 0.15f),
+                            modifier = Modifier.clickable { onCopy(slStr, "Stop Loss (SL)") }
+                        ) {
+                            Text(
+                                text = "📋 SL: $slStr",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SellRed,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = BuyGreen.copy(alpha = 0.15f),
+                            modifier = Modifier.clickable { onCopy(tpStr, "Take Profit (TP)") }
+                        ) {
+                            Text(
+                                text = "📋 TP: $tpStr",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BuyGreen,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
 
-            Row {
-                IconButton(
-                    onClick = {
-                        val txt = "${plan.action} ${plan.instrumentSymbol}\nLot: ${plan.lotSize}\nEntry: ${plan.entryPrice}\nSL: ${plan.stopLossPrice}\nTP: ${plan.takeProfitPrice}"
-                        onCopy(txt, "Rencana ${plan.instrumentSymbol}")
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                }
-
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.DeleteOutline, contentDescription = null, tint = SellRed, modifier = Modifier.size(16.dp))
-                }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(imageVector = Icons.Default.DeleteOutline, contentDescription = "Hapus", tint = SellRed, modifier = Modifier.size(16.dp))
             }
         }
     }

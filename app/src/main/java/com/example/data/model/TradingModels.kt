@@ -32,7 +32,11 @@ enum class TradingInstrument(
     );
 
     fun formatPrice(price: Double): String {
-        return "%.${decimalDigits}f".format(price)
+        return String.format(java.util.Locale.US, "%.${decimalDigits}f", price)
+    }
+
+    fun formatRawNumber(price: Double): String {
+        return String.format(java.util.Locale.US, "%.${decimalDigits}f", price)
     }
 
     fun pipsBetween(price1: Double, price2: Double): Double {
