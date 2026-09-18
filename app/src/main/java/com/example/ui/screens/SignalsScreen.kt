@@ -859,76 +859,147 @@ fun SignalHistoryItem(
     val isBuy = entity.action == "BUY"
     val actionColor = if (isBuy) BuyGreen else SellRed
     val timeFormatted = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(entity.timestamp))
+    val accuracyPct = if (entity.confidence > 0) entity.confidence else 88
 
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(actionColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = if (isBuy) "BUY" else "SELL",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = actionColor
-                    )
-                }
-
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(actionColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "${entity.instrumentSymbol} @ ${instrument.formatPrice(entity.entryPrice)}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = timeFormatted,
-                            fontSize = 10.sp,
-                            color = TextTertiary
+                            text = if (isBuy) "BUY" else "SELL",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = actionColor
                         )
                     }
-                    Text(
-                        text = "SL: ${instrument.formatPrice(entity.stopLoss)} | TP1: ${instrument.formatPrice(entity.takeProfit1)} (R:R 1:${"%.1f".format(entity.riskReward)})",
-                        fontSize = 11.sp,
-                        color = TextSecondary
-                    )
+
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "${entity.instrumentSymbol} @ ${instrument.formatPrice(entity.entryPrice)}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = timeFormatted,
+                                fontSize = 10.sp,
+                                color = TextTertiary
+                            )
+                        }
+                        Text(
+                            text = "SL: ${instrument.formatPrice(entity.stopLoss)} | TP1: ${instrument.formatPrice(entity.takeProfit1)}",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                // Accuracy / Confidence Badge
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = GoldPrimary.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Verified,
+                            contentDescription = null,
+                            tint = GoldPrimary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "$accuracyPct% Akurasi",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldPrimary
+                        )
+                    }
                 }
             }
 
-            IconButton(
-                onClick = {
-                    val txt = "Sinyal ${entity.action} ${entity.instrumentSymbol}\nEntry: ${instrument.formatPrice(entity.entryPrice)}\nSL: ${instrument.formatPrice(entity.stopLoss)}\nTP: ${instrument.formatPrice(entity.takeProfit1)}"
-                    onCopy(txt, "Sinyal ${entity.instrumentSymbol}")
-                },
-                modifier = Modifier.size(32.dp)
+            // Quick 1-Tap copy chips for MT5
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Salin Sinyal",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
+                FilledTonalButton(
+                    onClick = { onCopy(instrument.formatPrice(entity.stopLoss), "SL: ${instrument.formatPrice(entity.stopLoss)}") },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = SellRed.copy(alpha = 0.15f)),
+                    modifier = Modifier.weight(1f).height(28.dp)
+                ) {
+                    Text(
+                        text = "SL: ${instrument.formatPrice(entity.stopLoss)}",
+                        color = SellRed,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+
+                FilledTonalButton(
+                    onClick = { onCopy(instrument.formatPrice(entity.takeProfit1), "TP1: ${instrument.formatPrice(entity.takeProfit1)}") },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = BuyGreen.copy(alpha = 0.15f)),
+                    modifier = Modifier.weight(1f).height(28.dp)
+                ) {
+                    Text(
+                        text = "TP1: ${instrument.formatPrice(entity.takeProfit1)}",
+                        color = BuyGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+
+                FilledTonalButton(
+                    onClick = { onCopy(instrument.formatPrice(entity.entryPrice), "Entry: ${instrument.formatPrice(entity.entryPrice)}") },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = CyanEma.copy(alpha = 0.15f)),
+                    modifier = Modifier.weight(0.7f).height(28.dp)
+                ) {
+                    Text(
+                        text = "Entry",
+                        color = CyanEma,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

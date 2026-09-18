@@ -234,6 +234,7 @@ class ScalpingSignalEngine(
             }
             withContext(Dispatchers.Main) {
                 updateIndicatorsForBoth()
+                evaluateAutoSignals(forceNew = false)
             }
         } catch (e: Exception) {
             // Keep existing candle map
@@ -278,7 +279,12 @@ class ScalpingSignalEngine(
     }
 
     private fun evaluateAutoSignals(forceNew: Boolean = false) {
-        val targetInstrument = if (Random.nextBoolean()) TradingInstrument.XAUUSD else TradingInstrument.EURUSD
+        for (targetInstrument in TradingInstrument.values()) {
+            evaluateSignalForSingleInstrument(targetInstrument, forceNew)
+        }
+    }
+
+    private fun evaluateSignalForSingleInstrument(targetInstrument: TradingInstrument, forceNew: Boolean = false) {
         val candles = candleMap[Pair(targetInstrument, Timeframe.M5)] ?: return
         val ind = IndicatorCalculator.calculateIndicators(candles)
         val currentPrice = if (targetInstrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
@@ -286,11 +292,13 @@ class ScalpingSignalEngine(
         val isBullish = ind.emaFast > ind.emaSlow || ind.rsi < 40 || ind.macdHist > 0
         val action = if (isBullish) SignalAction.BUY else SignalAction.SELL
 
-        // Anti-spam cooldown: skip duplicate direction within 3 minutes unless manually triggered
+        // Anti-spam cooldown: skip duplicate direction within 3 minutes unless manually triggered or no active signal exists
         val now = System.currentTimeMillis()
         val lastTime = lastSignalTime[targetInstrument] ?: 0L
         val lastAction = lastSignalAction[targetInstrument]
-        if (!forceNew && action == lastAction && (now - lastTime) < 180_000L) {
+        val currentActive = _activeSignals.value[targetInstrument]
+
+        if (!forceNew && currentActive != null && action == lastAction && (now - lastTime) < 180_000L) {
             return
         }
         lastSignalTime[targetInstrument] = now
