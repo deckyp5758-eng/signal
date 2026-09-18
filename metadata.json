@@ -1,0 +1,7 @@
+{
+  "name": "ScalpSignal",
+  "description": "Aplikasi sinyal trading scalping real-time untuk XAU/USD dan EUR/USD berbasis indikator teknikal dengan notifikasi BUY/SELL instan, manajemen risiko SL/TP otomatis, dan tutorial pemula gratis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
