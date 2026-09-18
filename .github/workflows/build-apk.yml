@@ -24,14 +24,23 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Ensure Gradle Wrapper Exists
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "Generating Gradle Wrapper..."
+            gradle wrapper --gradle-version 8.7 --distribution-type bin
+          fi
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Rename APK
         run: |
@@ -45,20 +54,19 @@ jobs:
           path: build_output/ScalpSignal-Latest.apk
           retention-days: 30
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: build_output/ScalpSignal-Latest.apk
-          tag_name: ${{ github.ref_name || 'latest' }}
-          name: "ScalpSignal App Release ${{ github.ref_name || 'v1.0' }}"
+          tag_name: latest
+          name: "ScalpSignal App - Latest Build #${{ github.run_number }}"
           body: |
             ## 🚀 ScalpSignal Android APK Update
             
             Unduh dan instal langsung file APK di bawah ini di HP Android Anda:
-            - **File**: `ScalpSignal-Latest.apk`
-            - **Build Date**: ${{ github.event.head_commit.timestamp || 'Latest' }}
-            - **Commit**: `${{ github.sha }}`
+            - 📱 **File**: `ScalpSignal-Latest.apk`
+            - ⏱️ **Build**: #${{ github.run_number }}
+            - 🏷️ **Commit**: `${{ github.sha }}`
           draft: false
           prerelease: false
         env:
