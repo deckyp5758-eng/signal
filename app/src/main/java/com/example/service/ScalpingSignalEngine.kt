@@ -43,7 +43,7 @@ class ScalpingSignalEngine(
     private val lastSignalAction = mutableMapOf<TradingInstrument, SignalAction>()
 
     // Current prices
-    private val _xauPrice = MutableStateFlow(4377.34)
+    private val _xauPrice = MutableStateFlow(4379.00)
     val xauPrice: StateFlow<Double> = _xauPrice.asStateFlow()
 
     private val _eurPrice = MutableStateFlow(1.14834)
@@ -221,7 +221,7 @@ class ScalpingSignalEngine(
 
     private suspend fun syncLiveCandles() {
         try {
-            for (tf in listOf(Timeframe.M1, Timeframe.M5, Timeframe.M15)) {
+            for (tf in Timeframe.values()) {
                 val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf)
                 if (!xauCandles.isNullOrEmpty()) {
                     candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toMutableList()

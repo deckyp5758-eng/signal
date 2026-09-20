@@ -124,6 +124,10 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val showEma by viewModel.showEma.collectAsStateWithLifecycle()
     val showBollinger by viewModel.showBollinger.collectAsStateWithLifecycle()
     val showLevels by viewModel.showLevels.collectAsStateWithLifecycle()
+    val showPatterns by viewModel.showPatterns.collectAsStateWithLifecycle()
+    val selectedPatternFilter by viewModel.selectedPatternFilter.collectAsStateWithLifecycle()
+    val selectedGradeFilter by viewModel.selectedGradeFilter.collectAsStateWithLifecycle()
+    val filterOnlyHtfAligned by viewModel.filterOnlyHtfAligned.collectAsStateWithLifecycle()
 
     val currentPrice = if (selectedInstrument == TradingInstrument.XAUUSD) xauPrice else eurPrice
     val activeSignal = activeSignalsMap[selectedInstrument]
@@ -131,6 +135,13 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val chartCandles = remember(selectedInstrument, selectedTimeframe, xauPrice, eurPrice) {
         viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
     }
+    val htfCandles = remember(selectedInstrument, xauPrice, eurPrice) {
+        viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
+    }
+    val multiTimeframeTrends = remember(selectedInstrument, xauPrice, eurPrice) {
+        viewModel.getMultiTimeframeTrends(selectedInstrument)
+    }
+
 
     val calculatedRisk = remember(riskInput, selectedInstrument, currentPrice) {
         viewModel.calculateCurrentRisk()
@@ -160,17 +171,6 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         onSelect = { viewModel.selectInstrument(it) }
                     )
                 }
-
-                // In-App Real-time alert banner
-                InAppSignalBanner(
-                    signal = bannerSignal,
-                    onDismiss = { viewModel.dismissBanner() },
-                    onViewDetail = { signal ->
-                        viewModel.selectInstrument(signal.instrument)
-                        viewModel.selectTab(AppTab.SIGNALS)
-                        viewModel.dismissBanner()
-                    }
-                )
             }
         },
         bottomBar = {
@@ -310,10 +310,39 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         showEma = showEma,
                         showBollinger = showBollinger,
                         showLevels = showLevels,
+                        showPatterns = showPatterns,
+                        selectedPatternFilter = selectedPatternFilter,
+                        multiTimeframeTrends = multiTimeframeTrends,
+                        htfCandles = htfCandles,
+                        selectedGradeFilter = selectedGradeFilter,
+                        filterOnlyHtfAligned = filterOnlyHtfAligned,
                         onSelectTimeframe = { viewModel.selectTimeframe(it) },
                         onToggleEma = { viewModel.toggleEma() },
                         onToggleBollinger = { viewModel.toggleBollinger() },
-                        onToggleLevels = { viewModel.toggleLevels() }
+                        onToggleLevels = { viewModel.toggleLevels() },
+                        onTogglePatterns = { viewModel.togglePatterns() },
+                        onSelectPatternFilter = { viewModel.selectPatternFilter(it) },
+                        onSelectGradeFilter = { viewModel.selectGradeFilter(it) },
+                        onToggleHtfAlignedFilter = { viewModel.toggleHtfAlignedFilter() },
+                        onApplyPatternToRisk = { pattern ->
+                            val entry = if (pattern.keyLevelPrice > 0) pattern.keyLevelPrice else currentPrice
+                            val slPips = if (pattern.suggestedStopLoss > 0) {
+                                selectedInstrument.pipsBetween(entry, pattern.suggestedStopLoss).toInt().coerceAtLeast(10).toString()
+                            } else "20"
+                            val tpPips = if (pattern.suggestedTakeProfit > 0) {
+                                selectedInstrument.pipsBetween(entry, pattern.suggestedTakeProfit).toInt().coerceAtLeast(20).toString()
+                            } else "40"
+
+                            viewModel.updateRiskInput { current ->
+                                current.copy(
+                                    action = pattern.action,
+                                    entryPriceText = selectedInstrument.formatPrice(entry),
+                                    slPipsText = slPips,
+                                    riskReward = pattern.estimatedRiskReward
+                                )
+                            }
+                            viewModel.selectTab(AppTab.RISK_MANAGER)
+                        }
                     )
                 }
                 AppTab.CALENDAR -> {

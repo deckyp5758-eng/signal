@@ -133,6 +133,20 @@ fun TutorialScreen(
             ),
             TutorialModule(
                 id = 6,
+                title = "Ensiklopedi Pola Trading & Smart Money (SMC)",
+                subtitle = "Pahami seluruh pola Candlestick, Pola W/M/H&S, Order Block & FVG",
+                icon = Icons.Default.AutoGraph,
+                accentColor = GoldPrimary,
+                contents = listOf(
+                    "Pola Candlestick Pembalikan: Engulfing (body menelan lilin sebelumnya), Hammer/Pinbar (ekor bawah panjang tanda buyer melawan balik), Shooting Star (ekor atas panjang tanda seller membanting harga).",
+                    "Pola Chart Geometris: Double Bottom (Pola W) & Double Top (Pola M) menandakan kegagalan pasar menembus support/resistance ganda. Head & Shoulders (H&S) adalah pola pembalikan dengan akurasi tertinggi.",
+                    "Smart Money Concepts (SMC): Order Block (OB) adalah jejak akumulasi bank institusi, sedangkan Fair Value Gap (FVG) adalah celah lompatan harga yang akan dijemput kembali oleh pasar.",
+                    "Analisis Multi-Timeframe: Gunakan H1 & M30 untuk memetakan arah tren mayor dan zona kunci, lalu gunakan M1, M5, atau M15 untuk eksekusi entri scalping presisi.",
+                    "Fitur Auto-Draw: Aktifkan saklar 'Pola & Zona' di tab Grafik untuk melihat garis pola dan kotak zona otomatis digambar oleh aplikasi."
+                )
+            ),
+            TutorialModule(
+                id = 7,
                 title = "Kamus Istilah Scalper Pemula",
                 subtitle = "Pahami bahasa trader profesional",
                 icon = Icons.Default.MenuBook,
@@ -145,7 +159,7 @@ fun TutorialScreen(
                 )
             ),
             TutorialModule(
-                id = 7,
+                id = 8,
                 title = "Panduan Install & Update APK dari GitHub",
                 subtitle = "Cara download APK dan memasangnya di HP Android Anda",
                 icon = Icons.Default.DownloadForOffline,

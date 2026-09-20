@@ -157,4 +157,31 @@ object IndicatorCalculator {
         val p = minOf(period, trList.size)
         return trList.takeLast(p).average()
     }
+
+    /**
+     * Determines trend direction for a given series of candles using EMA 9, EMA 21, and Price Action.
+     */
+    fun calculateTrend(candles: List<Candle>): com.example.data.model.TrendDirection {
+        if (candles.size < 5) return com.example.data.model.TrendDirection.NEUTRAL
+
+        val closes = candles.map { it.close }
+        val ema9List = calculateEMA(closes, 9)
+        val ema21List = calculateEMA(closes, 21)
+
+        val lastClose = closes.last()
+        val lastEma9 = ema9List.lastOrNull() ?: lastClose
+        val lastEma21 = ema21List.lastOrNull() ?: lastClose
+
+        // Momentum slope over last 3 bars
+        val slope = if (closes.size >= 4) (closes.last() - closes[closes.size - 4]) else 0.0
+
+        return when {
+            lastClose > lastEma21 && lastEma9 >= lastEma21 && slope >= 0 -> com.example.data.model.TrendDirection.BULLISH
+            lastClose < lastEma21 && lastEma9 <= lastEma21 && slope <= 0 -> com.example.data.model.TrendDirection.BEARISH
+            lastClose > lastEma21 && lastEma9 > lastEma21 -> com.example.data.model.TrendDirection.BULLISH
+            lastClose < lastEma21 && lastEma9 < lastEma21 -> com.example.data.model.TrendDirection.BEARISH
+            else -> com.example.data.model.TrendDirection.NEUTRAL
+        }
+    }
 }
+

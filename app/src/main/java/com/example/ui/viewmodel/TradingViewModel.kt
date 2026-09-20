@@ -129,6 +129,19 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     private val _showLevels = MutableStateFlow(true)
     val showLevels: StateFlow<Boolean> = _showLevels.asStateFlow()
 
+    private val _showPatterns = MutableStateFlow(true)
+    val showPatterns: StateFlow<Boolean> = _showPatterns.asStateFlow()
+
+    private val _selectedPatternFilter = MutableStateFlow(PatternTypeCategory.ALL)
+    val selectedPatternFilter: StateFlow<PatternTypeCategory> = _selectedPatternFilter.asStateFlow()
+
+    // Confluence Grade & MTF Trend Filters
+    private val _selectedGradeFilter = MutableStateFlow<ConfluenceGrade?>(null)
+    val selectedGradeFilter: StateFlow<ConfluenceGrade?> = _selectedGradeFilter.asStateFlow()
+
+    private val _filterOnlyHtfAligned = MutableStateFlow(false)
+    val filterOnlyHtfAligned: StateFlow<Boolean> = _filterOnlyHtfAligned.asStateFlow()
+
     init {
         // Observe incoming signals for in-app banner
         viewModelScope.launch {
@@ -212,6 +225,30 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     fun toggleLevels() {
         _showLevels.value = !_showLevels.value
     }
+
+    fun togglePatterns() {
+        _showPatterns.value = !_showPatterns.value
+    }
+
+    fun selectPatternFilter(category: PatternTypeCategory) {
+        _selectedPatternFilter.value = category
+    }
+
+    fun selectGradeFilter(grade: ConfluenceGrade?) {
+        _selectedGradeFilter.value = grade
+    }
+
+    fun toggleHtfAlignedFilter() {
+        _filterOnlyHtfAligned.value = !_filterOnlyHtfAligned.value
+    }
+
+    fun getMultiTimeframeTrends(instrument: TradingInstrument): Map<Timeframe, TrendDirection> {
+        return Timeframe.values().associateWith { tf ->
+            val c = engine.getCandles(instrument, tf)
+            com.example.service.IndicatorCalculator.calculateTrend(c)
+        }
+    }
+
 
     // Risk calculator handlers
     fun updateRiskInput(transform: (RiskCalcInput) -> RiskCalcInput) {

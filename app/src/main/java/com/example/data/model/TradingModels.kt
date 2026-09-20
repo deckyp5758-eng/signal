@@ -59,8 +59,71 @@ enum class SignalStrength(val label: String, val starCount: Int) {
 enum class Timeframe(val code: String, val label: String, val seconds: Long) {
     M1("M1", "1 Menit (Ultra Scalp)", 60),
     M5("M5", "5 Menit (Standard Scalp)", 300),
-    M15("M15", "15 Menit (Trend Scalp)", 900)
+    M15("M15", "15 Menit (Trend Scalp)", 900),
+    M30("M30", "30 Menit (Intraday)", 1800),
+    H1("H1", "1 Jam (Major Trend)", 3600)
 }
+
+enum class PatternTypeCategory(val label: String) {
+    ALL("Semua Pola"),
+    CANDLESTICK("Pola Candlestick"),
+    CHART_PATTERN("Pola Chart (M/W/H&S)"),
+    SMC("Smart Money & Zone (OB/FVG)")
+}
+
+enum class ConfluenceGrade(
+    val code: String,
+    val label: String,
+    val badgeTitle: String,
+    val description: String
+) {
+    A_PLUS("A+", "Grade A+ (Elite)", "💎 Elite Setup", "Konfluensi maksimal: sejalan tren HTF, momentum, dan key level optimal"),
+    A("A", "Grade A (High Quality)", "⭐ High Quality", "Konfluensi tinggi: setup berkualitas dengan 2-3 indikator pendukung"),
+    B("B", "Grade B (Moderate Scalp)", "⚡ Quick Scalp", "Setup cepat / counter-trend: waspada pembalikan, disarankan TP ketat")
+}
+
+enum class TrendDirection(val code: String, val label: String) {
+    BULLISH("BULL", "Bullish (Naik)"),
+    BEARISH("BEAR", "Bearish (Turun)"),
+    NEUTRAL("FLAT", "Netral / Sideways")
+}
+
+enum class TrendAlignment(val label: String, val isAligned: Boolean) {
+    ALIGNED("Sejalan Tren HTF", true),
+    COUNTER_TREND("Melawan Tren HTF (Counter-Trend)", false),
+    NEUTRAL("Netral / Flat", false)
+}
+
+data class PointCoord(val candleIndex: Int, val price: Double)
+
+data class DetectedPattern(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val category: PatternTypeCategory,
+    val action: SignalAction, // BUY or SELL
+    val confidence: Int, // e.g. 88%
+    val description: String,
+    val tradingTip: String,
+    val startCandleIndex: Int,
+    val endCandleIndex: Int,
+    // Key levels for visual overlays
+    val keyLevelPrice: Double = 0.0,
+    val upperZonePrice: Double = 0.0,
+    val lowerZonePrice: Double = 0.0,
+    val necklinePrice: Double? = null,
+    // Swing points for geometric drawing (Double Top/Bottom, H&S, Flag, Triangle)
+    val swingPoints: List<PointCoord> = emptyList(),
+    val isBreakoutActive: Boolean = false,
+    // Confluence Rating & Multi-Timeframe details
+    val confluenceGrade: ConfluenceGrade = ConfluenceGrade.A,
+    val confluenceScore: Int = 75,
+    val confluenceFactors: List<String> = emptyList(),
+    val htfTrendAlignment: TrendAlignment = TrendAlignment.ALIGNED,
+    val higherTimeframeTrend: TrendDirection = TrendDirection.NEUTRAL,
+    val estimatedRiskReward: Double = 2.0,
+    val suggestedStopLoss: Double = 0.0,
+    val suggestedTakeProfit: Double = 0.0
+)
 
 data class IndicatorValues(
     val rsi: Double,
