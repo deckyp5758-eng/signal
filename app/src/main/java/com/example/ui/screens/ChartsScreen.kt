@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -7,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -32,10 +37,13 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.*
 import com.example.service.IndicatorCalculator
 import com.example.service.PatternRecognitionEngine
@@ -73,9 +81,32 @@ fun ChartsScreen(
     onToggleHtfAlignedFilter: () -> Unit = {},
     onApplyPatternToRisk: (DetectedPattern) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val activity = remember(context) {
+        var ctx = context
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) return@remember ctx
+            ctx = ctx.baseContext
+        }
+        null
+    }
+
+    var isFullScreen by remember { mutableStateOf(false) }
     var selectedCandleIndex by remember { mutableStateOf<Int?>(null) }
     var showSpreadInfoDialog by remember { mutableStateOf(false) }
     var showConfluenceInfoDialog by remember { mutableStateOf(false) }
+
+    // Lock orientation to Landscape when FullScreen is active, and restore to Unspecified when exited
+    DisposableEffect(isFullScreen) {
+        if (isFullScreen) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
 
     // Run Auto Pattern Recognition Engine with Confluence Grade & HTF Trend Analysis
     val allDetectedPatterns = remember(candles, instrument, timeframe, htfCandles) {
@@ -386,7 +417,7 @@ fun ChartsScreen(
             }
         }
 
-        // 4. Custom Candlestick Canvas with Auto-Draw Patterns
+        // 4. Custom Candlestick Canvas with Auto-Draw Patterns & Fullscreen toggle
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -414,6 +445,37 @@ fun ChartsScreen(
                             selectedCandleIndex = selectedCandleIndex,
                             onCandleSelected = { idx -> selectedCandleIndex = idx }
                         )
+                    }
+
+                    // Fullscreen Mode Trigger Button (Top Right)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 4.dp, end = 68.dp)
+                            .clickable { isFullScreen = true }
+                            .testTag("enter_fullscreen_button")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Layar Penuh",
+                                tint = GoldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Layar Penuh",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -901,6 +963,151 @@ fun ChartsScreen(
             }
         )
     }
+
+    // ==========================================
+    // LANDSCAPE FULLSCREEN CHART DIALOG / OVERLAY
+    // ==========================================
+    if (isFullScreen) {
+        Dialog(
+            onDismissRequest = { isFullScreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    // Top Landscape Bar: Instrument + Live Price + Toggles + Exit Button
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Left: Symbol & Timeframe badge & Inspected candle data
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = GoldPrimary.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, GoldPrimary)
+                            ) {
+                                Text(
+                                    text = "${instrument.displayName} • ${timeframe.code}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GoldPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+
+                            val candleToInspect = if (selectedCandleIndex != null && selectedCandleIndex in candles.indices) {
+                                candles[selectedCandleIndex!!]
+                            } else {
+                                candles.lastOrNull()
+                            }
+
+                            if (candleToInspect != null) {
+                                val isBull = candleToInspect.close >= candleToInspect.open
+                                val col = if (isBull) BuyGreen else SellRed
+                                val timeStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(candleToInspect.timestamp))
+                                Text(
+                                    text = "[$timeStr] O: ${instrument.formatPrice(candleToInspect.open)} H: ${instrument.formatPrice(candleToInspect.high)} L: ${instrument.formatPrice(candleToInspect.low)} C: ${instrument.formatPrice(candleToInspect.close)}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = col
+                                )
+                            }
+                        }
+
+                        // Right: Quick Overlay Toggles & Exit Button
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // EMA Toggle
+                            FilterChip(
+                                selected = showEma,
+                                onClick = onToggleEma,
+                                label = { Text("EMA", fontSize = 9.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = CyanEma.copy(alpha = 0.25f),
+                                    selectedLabelColor = CyanEma
+                                ),
+                                modifier = Modifier.height(28.dp)
+                            )
+
+                            // SL/TP Levels Toggle
+                            FilterChip(
+                                selected = showLevels,
+                                onClick = onToggleLevels,
+                                label = { Text("SL/TP", fontSize = 9.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BuyGreen.copy(alpha = 0.25f),
+                                    selectedLabelColor = BuyGreen
+                                ),
+                                modifier = Modifier.height(28.dp)
+                            )
+
+                            // Patterns Toggle
+                            FilterChip(
+                                selected = showPatterns,
+                                onClick = onTogglePatterns,
+                                label = { Text("Pola", fontSize = 9.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = GoldPrimary.copy(alpha = 0.25f),
+                                    selectedLabelColor = GoldPrimary
+                                ),
+                                modifier = Modifier.height(28.dp)
+                            )
+
+                            // Exit Fullscreen Button
+                            IconButton(
+                                onClick = { isFullScreen = false },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .testTag("exit_fullscreen_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FullscreenExit,
+                                    contentDescription = "Keluar Layar Penuh",
+                                    tint = GoldPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    // Chart Canvas in Fullscreen
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
+                            .padding(4.dp)
+                    ) {
+                        CandlestickChart(
+                            candles = candles,
+                            instrument = instrument,
+                            activeSignal = activeSignal,
+                            detectedPatterns = allDetectedPatterns,
+                            showEma = showEma,
+                            showBollinger = showBollinger,
+                            showLevels = showLevels,
+                            showPatterns = showPatterns,
+                            selectedCandleIndex = selectedCandleIndex,
+                            onCandleSelected = { idx -> selectedCandleIndex = idx }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1204,299 +1411,513 @@ fun CandlestickChart(
     val ema9 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 9) }
     val ema21 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 21) }
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(candles) {
-                detectDragGestures(
-                    onDrag = { change, _ ->
-                        change.consume()
-                        val count = candles.size
-                        if (count > 0) {
-                            val candleWidth = size.width / count
-                            val idx = (change.position.x / candleWidth).toInt().coerceIn(0, count - 1)
-                            onCandleSelected(idx)
+    // Interactive Zoom and Pan State
+    // visibleCandlesCount: default 35 candles, min 12 (zoomed in), max 80 (zoomed out)
+    var visibleCandlesCount by remember(candles.size) { mutableStateOf(35f.coerceAtMost(candles.size.toFloat().coerceAtLeast(10f))) }
+    // scrollOffset: 0f = most recent candles at right. Positive values = scrolled back in time
+    var scrollOffset by remember(candles.size) { mutableStateOf(0f) }
+
+    val totalCandles = candles.size
+    val minVisible = 12f
+    val maxVisible = totalCandles.toFloat().coerceAtLeast(15f)
+
+    // Clamp scroll offset within valid range
+    val maxScroll = (totalCandles - visibleCandlesCount).coerceAtLeast(0f)
+    val clampedScroll = scrollOffset.coerceIn(0f, maxScroll)
+
+    // Compute visible window
+    val endIndex = (totalCandles - 1 - clampedScroll.toInt()).coerceIn(0, (totalCandles - 1).coerceAtLeast(0))
+    val startIndex = (endIndex - visibleCandlesCount.toInt() + 1).coerceIn(0, endIndex)
+    val visibleCandles = if (candles.isNotEmpty()) candles.subList(startIndex, endIndex + 1) else emptyList()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(candles, visibleCandlesCount, clampedScroll) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        if (zoom != 1f) {
+                            // Zooming changes visible candles count
+                            val newVisible = (visibleCandlesCount / zoom).coerceIn(minVisible, maxVisible)
+                            visibleCandlesCount = newVisible
+                        }
+                        if (pan.x != 0f) {
+                            // Panning horizontally moves the candle window
+                            val candlePxWidth = (size.width - 65.dp.toPx()) / visibleCandlesCount
+                            if (candlePxWidth > 0) {
+                                val deltaCandles = pan.x / candlePxWidth
+                                val newScroll = (scrollOffset + deltaCandles).coerceIn(0f, (totalCandles - visibleCandlesCount).coerceAtLeast(0f))
+                                scrollOffset = newScroll
+                            }
                         }
                     }
-                )
-            }
-            .pointerInput(candles) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        val count = candles.size
-                        if (count > 0) {
-                            val candleWidth = size.width / count
-                            val idx = (offset.x / candleWidth).toInt().coerceIn(0, count - 1)
-                            onCandleSelected(idx)
+                }
+                .pointerInput(candles, visibleCandlesCount, clampedScroll, startIndex) {
+                    detectTapGestures(
+                        onTap = { offset ->
+                            val chartWidth = size.width - 65.dp.toPx()
+                            if (offset.x in 0f..chartWidth && visibleCandles.isNotEmpty()) {
+                                val candleWidth = chartWidth / visibleCandles.size
+                                val localIdx = (offset.x / candleWidth).toInt().coerceIn(0, visibleCandles.size - 1)
+                                val globalIdx = startIndex + localIdx
+                                onCandleSelected(globalIdx)
+                            } else {
+                                onCandleSelected(null)
+                            }
                         }
-                    }
-                )
-            }
-    ) {
-        if (candles.isEmpty()) return@Canvas
-
-        val w = size.width
-        val h = size.height
-
-        val minPrice = candles.minOf { it.low } * 0.9995
-        val maxPrice = candles.maxOf { it.high } * 1.0005
-        val priceRange = maxOf(maxPrice - minPrice, 0.0001)
-
-        fun priceToY(price: Double): Float {
-            val normalized = (price - minPrice) / priceRange
-            return (h - (normalized * h)).toFloat().coerceIn(0f, h)
-        }
-
-        // Background horizontal grid lines
-        val gridCount = 4
-        for (i in 0..gridCount) {
-            val y = (h / gridCount) * i
-            drawLine(
-                color = Color.White.copy(alpha = 0.05f),
-                start = Offset(0f, y),
-                end = Offset(w, y),
-                strokeWidth = 1f
-            )
-        }
-
-        val count = candles.size
-        val candleSlotWidth = w / count
-        val bodyWidth = candleSlotWidth * 0.65f
-
-        // ==========================================
-        // DRAW AUTO SMC & ZONE OVERLAYS (UNDER CANDLES)
-        // ==========================================
-        if (showPatterns) {
-            detectedPatterns.forEach { pattern ->
-                if (pattern.category == PatternTypeCategory.SMC && pattern.upperZonePrice > 0 && pattern.lowerZonePrice > 0) {
-                    val yTop = priceToY(pattern.upperZonePrice)
-                    val yBottom = priceToY(pattern.lowerZonePrice)
-                    val zoneHeight = maxOf(abs(yBottom - yTop), 6f)
-                    val zoneColor = if (pattern.action == SignalAction.BUY) BuyGreen else SellRed
-
-                    val xStart = (pattern.startCandleIndex.coerceIn(0, count - 1) * candleSlotWidth)
-                    val xEnd = w
-
-                    // Draw shaded zone box
-                    drawRect(
-                        color = zoneColor.copy(alpha = 0.12f),
-                        topLeft = Offset(xStart, min(yTop, yBottom)),
-                        size = Size(xEnd - xStart, zoneHeight)
-                    )
-
-                    // Draw dashed border on zone
-                    val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f)
-                    drawLine(
-                        color = zoneColor.copy(alpha = 0.5f),
-                        start = Offset(xStart, min(yTop, yBottom)),
-                        end = Offset(xEnd, min(yTop, yBottom)),
-                        strokeWidth = 1.5f,
-                        pathEffect = dashEffect
-                    )
-                    drawLine(
-                        color = zoneColor.copy(alpha = 0.5f),
-                        start = Offset(xStart, max(yTop, yBottom)),
-                        end = Offset(xEnd, max(yTop, yBottom)),
-                        strokeWidth = 1.5f,
-                        pathEffect = dashEffect
                     )
                 }
+        ) {
+            if (candles.isEmpty()) return@Canvas
+
+            val rightPriceScaleWidth = 65.dp.toPx()
+            val bottomTimeScaleHeight = 22.dp.toPx()
+            val chartW = size.width - rightPriceScaleWidth
+            val chartH = size.height - bottomTimeScaleHeight
+
+            if (chartW <= 0 || chartH <= 0) return@Canvas
+
+            // Compute min and max price from visible candles for adaptive scaling
+            val displayCandles = if (visibleCandles.isNotEmpty()) visibleCandles else candles
+            val minP = displayCandles.minOf { it.low }
+            val maxP = displayCandles.maxOf { it.high }
+            val padding = (maxP - minP) * 0.08
+            val minPrice = (minP - padding).coerceAtLeast(0.0001)
+            val maxPrice = maxP + padding
+            val priceRange = maxOf(maxPrice - minPrice, 0.00001)
+
+            fun priceToY(price: Double): Float {
+                val normalized = (price - minPrice) / priceRange
+                return (chartH - (normalized * chartH)).toFloat().coerceIn(0f, chartH)
             }
-        }
 
-        // Draw Candlesticks
-        for (i in candles.indices) {
-            val candle = candles[i]
-            val xCenter = (i * candleSlotWidth) + (candleSlotWidth / 2f)
-            val isBull = candle.close >= candle.open
-            val color = if (isBull) BuyGreen else SellRed
+            // ==========================================
+            // 1. HORIZONTAL GRID LINES & RIGHT PRICE SCALE
+            // ==========================================
+            val gridCount = 5
+            val textPaint = android.graphics.Paint().apply {
+                color = android.graphics.Color.argb(180, 160, 170, 190)
+                textSize = 9.sp.toPx()
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
 
-            val yHigh = priceToY(candle.high)
-            val yLow = priceToY(candle.low)
-            val yOpen = priceToY(candle.open)
-            val yClose = priceToY(candle.close)
+            for (i in 0..gridCount) {
+                val y = (chartH / gridCount) * i
+                val priceAtY = maxPrice - (i.toDouble() / gridCount) * priceRange
 
-            val bodyTop = minOf(yOpen, yClose)
-            val bodyHeight = maxOf(abs(yOpen - yClose), 2f)
+                // Grid line across chart area
+                drawLine(
+                    color = Color.White.copy(alpha = 0.06f),
+                    start = Offset(0f, y),
+                    end = Offset(chartW, y),
+                    strokeWidth = 1f
+                )
 
-            // Wick line
+                // Right price text label
+                drawContext.canvas.nativeCanvas.drawText(
+                    instrument.formatPrice(priceAtY),
+                    chartW + 6.dp.toPx(),
+                    y + 3.dp.toPx(),
+                    textPaint
+                )
+            }
+
+            // Divider line between chart and right price scale
             drawLine(
-                color = color,
-                start = Offset(xCenter, yHigh),
-                end = Offset(xCenter, yLow),
-                strokeWidth = 1.5f
+                color = Color.White.copy(alpha = 0.15f),
+                start = Offset(chartW, 0f),
+                end = Offset(chartW, chartH),
+                strokeWidth = 1f
             )
 
-            // Body rectangle
-            drawRect(
-                color = color,
-                topLeft = Offset(xCenter - (bodyWidth / 2f), bodyTop),
-                size = Size(bodyWidth, bodyHeight)
+            // Divider line between chart and bottom time scale
+            drawLine(
+                color = Color.White.copy(alpha = 0.15f),
+                start = Offset(0f, chartH),
+                end = Offset(chartW, chartH),
+                strokeWidth = 1f
             )
-        }
 
-        // Draw EMA lines
-        if (showEma && ema9.size == candles.size) {
-            val ema9Path = Path()
-            for (i in ema9.indices) {
+            val vCount = displayCandles.size
+            if (vCount == 0) return@Canvas
+            val candleSlotWidth = chartW / vCount
+            val bodyWidth = (candleSlotWidth * 0.70f).coerceAtLeast(1.5f)
+
+            // ==========================================
+            // 2. VERTICAL GRID LINES & BOTTOM TIME LABELS
+            // ==========================================
+            val timeStep = (vCount / 5).coerceAtLeast(1)
+            val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+            for (i in 0 until vCount step timeStep) {
+                val candle = displayCandles[i]
                 val x = (i * candleSlotWidth) + (candleSlotWidth / 2f)
-                val y = priceToY(ema9[i])
-                if (i == 0) ema9Path.moveTo(x, y) else ema9Path.lineTo(x, y)
+
+                // Vertical grid line
+                drawLine(
+                    color = Color.White.copy(alpha = 0.04f),
+                    start = Offset(x, 0f),
+                    end = Offset(x, chartH),
+                    strokeWidth = 1f
+                )
+
+                // Time label at bottom
+                val timeLabel = timeFormat.format(Date(candle.timestamp))
+                drawContext.canvas.nativeCanvas.drawText(
+                    timeLabel,
+                    x - 12.dp.toPx(),
+                    chartH + 16.dp.toPx(),
+                    textPaint
+                )
             }
-            drawPath(path = ema9Path, color = CyanEma, style = Stroke(width = 2.5f))
-        }
 
-        if (showEma && ema21.size == candles.size) {
-            val ema21Path = Path()
-            for (i in ema21.indices) {
-                val x = (i * candleSlotWidth) + (candleSlotWidth / 2f)
-                val y = priceToY(ema21[i])
-                if (i == 0) ema21Path.moveTo(x, y) else ema21Path.lineTo(x, y)
-            }
-            drawPath(path = ema21Path, color = OrangeEma, style = Stroke(width = 2.5f))
-        }
+            // ==========================================
+            // 3. AUTO SMC & ZONE OVERLAYS (UNDER CANDLES)
+            // ==========================================
+            if (showPatterns) {
+                detectedPatterns.forEach { pattern ->
+                    if (pattern.category == PatternTypeCategory.SMC && pattern.upperZonePrice > 0 && pattern.lowerZonePrice > 0) {
+                        val yTop = priceToY(pattern.upperZonePrice)
+                        val yBottom = priceToY(pattern.lowerZonePrice)
+                        val zoneHeight = maxOf(abs(yBottom - yTop), 4f)
+                        val zoneColor = if (pattern.action == SignalAction.BUY) BuyGreen else SellRed
 
-        // ==========================================
-        // DRAW AUTO CHART PATTERNS & CANDLESTICK MARKERS
-        // ==========================================
-        if (showPatterns) {
-            detectedPatterns.forEach { pattern ->
-                // A. Draw Chart Pattern Swing Lines (Double Top, Double Bottom, H&S, Flag)
-                if (pattern.category == PatternTypeCategory.CHART_PATTERN && pattern.swingPoints.size >= 2) {
-                    val patternPath = Path()
-                    val pathColor = if (pattern.action == SignalAction.BUY) BuyGreen else SellRed
+                        val pStart = (pattern.startCandleIndex - startIndex).coerceIn(0, vCount - 1)
+                        val xStart = pStart * candleSlotWidth
+                        val xEnd = chartW
 
-                    pattern.swingPoints.forEachIndexed { idx, point ->
-                        val pIdx = point.candleIndex.coerceIn(0, count - 1)
-                        val x = (pIdx * candleSlotWidth) + (candleSlotWidth / 2f)
-                        val y = priceToY(point.price)
-
-                        if (idx == 0) {
-                            patternPath.moveTo(x, y)
-                        } else {
-                            patternPath.lineTo(x, y)
-                        }
-
-                        // Draw vertex circle dot
-                        drawCircle(
-                            color = GoldPrimary,
-                            radius = 3.5f,
-                            center = Offset(x, y)
+                        drawRect(
+                            color = zoneColor.copy(alpha = 0.12f),
+                            topLeft = Offset(xStart, min(yTop, yBottom)),
+                            size = Size(xEnd - xStart, zoneHeight)
                         )
-                    }
 
-                    // Stroke the swing lines connecting peaks and valleys
-                    drawPath(
-                        path = patternPath,
-                        color = pathColor.copy(alpha = 0.85f),
-                        style = Stroke(width = 2.5f)
-                    )
-
-                    // Draw Neckline if available
-                    if (pattern.necklinePrice != null) {
-                        val yNeck = priceToY(pattern.necklinePrice)
-                        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f)
                         drawLine(
-                            color = GoldPrimary,
-                            start = Offset(0f, yNeck),
-                            end = Offset(w, yNeck),
-                            strokeWidth = 2f,
+                            color = zoneColor.copy(alpha = 0.45f),
+                            start = Offset(xStart, min(yTop, yBottom)),
+                            end = Offset(xEnd, min(yTop, yBottom)),
+                            strokeWidth = 1.2f,
+                            pathEffect = dashEffect
+                        )
+                        drawLine(
+                            color = zoneColor.copy(alpha = 0.45f),
+                            start = Offset(xStart, max(yTop, yBottom)),
+                            end = Offset(xEnd, max(yTop, yBottom)),
+                            strokeWidth = 1.2f,
                             pathEffect = dashEffect
                         )
                     }
                 }
+            }
 
-                // B. Draw Candlestick Pattern Indicator Triangles / Markers
-                if (pattern.category == PatternTypeCategory.CANDLESTICK) {
-                    val idx = pattern.endCandleIndex.coerceIn(0, count - 1)
-                    val x = (idx * candleSlotWidth) + (candleSlotWidth / 2f)
-                    val candle = candles[idx]
+            // ==========================================
+            // 4. DRAW VISIBLE CANDLESTICKS
+            // ==========================================
+            for (i in 0 until vCount) {
+                val candle = displayCandles[i]
+                val xCenter = (i * candleSlotWidth) + (candleSlotWidth / 2f)
+                val isBull = candle.close >= candle.open
+                val color = if (isBull) BuyGreen else SellRed
 
-                    if (pattern.action == SignalAction.BUY) {
-                        val yLow = priceToY(candle.low) + 6f
-                        // Upward green triangle under candle
-                        val triPath = Path().apply {
-                            moveTo(x, yLow)
-                            lineTo(x - 5f, yLow + 9f)
-                            lineTo(x + 5f, yLow + 9f)
-                            close()
+                val yHigh = priceToY(candle.high)
+                val yLow = priceToY(candle.low)
+                val yOpen = priceToY(candle.open)
+                val yClose = priceToY(candle.close)
+
+                val bodyTop = minOf(yOpen, yClose)
+                val bodyHeight = maxOf(abs(yOpen - yClose), 1.5f)
+
+                // Wick
+                drawLine(
+                    color = color,
+                    start = Offset(xCenter, yHigh),
+                    end = Offset(xCenter, yLow),
+                    strokeWidth = 1.5f
+                )
+
+                // Body
+                drawRect(
+                    color = color,
+                    topLeft = Offset(xCenter - (bodyWidth / 2f), bodyTop),
+                    size = Size(bodyWidth, bodyHeight)
+                )
+            }
+
+            // ==========================================
+            // 5. DRAW EMA LINES (9 & 21)
+            // ==========================================
+            if (showEma && ema9.size == candles.size) {
+                val ema9Path = Path()
+                var hasStarted = false
+                for (i in 0 until vCount) {
+                    val globalI = startIndex + i
+                    if (globalI in ema9.indices) {
+                        val x = (i * candleSlotWidth) + (candleSlotWidth / 2f)
+                        val y = priceToY(ema9[globalI])
+                        if (!hasStarted) {
+                            ema9Path.moveTo(x, y)
+                            hasStarted = true
+                        } else {
+                            ema9Path.lineTo(x, y)
                         }
-                        drawPath(path = triPath, color = BuyGreen)
-                    } else if (pattern.action == SignalAction.SELL) {
-                        val yHigh = priceToY(candle.high) - 6f
-                        // Downward red triangle above candle
-                        val triPath = Path().apply {
-                            moveTo(x, yHigh)
-                            lineTo(x - 5f, yHigh - 9f)
-                            lineTo(x + 5f, yHigh - 9f)
-                            close()
+                    }
+                }
+                drawPath(path = ema9Path, color = CyanEma, style = Stroke(width = 2.5f))
+            }
+
+            if (showEma && ema21.size == candles.size) {
+                val ema21Path = Path()
+                var hasStarted = false
+                for (i in 0 until vCount) {
+                    val globalI = startIndex + i
+                    if (globalI in ema21.indices) {
+                        val x = (i * candleSlotWidth) + (candleSlotWidth / 2f)
+                        val y = priceToY(ema21[globalI])
+                        if (!hasStarted) {
+                            ema21Path.moveTo(x, y)
+                            hasStarted = true
+                        } else {
+                            ema21Path.lineTo(x, y)
                         }
-                        drawPath(path = triPath, color = SellRed)
+                    }
+                }
+                drawPath(path = ema21Path, color = OrangeEma, style = Stroke(width = 2.5f))
+            }
+
+            // ==========================================
+            // 6. DRAW CHART PATTERNS & MARKERS
+            // ==========================================
+            if (showPatterns) {
+                detectedPatterns.forEach { pattern ->
+                    if (pattern.category == PatternTypeCategory.CHART_PATTERN && pattern.swingPoints.size >= 2) {
+                        val patternPath = Path()
+                        val pathColor = if (pattern.action == SignalAction.BUY) BuyGreen else SellRed
+                        var pathStarted = false
+
+                        pattern.swingPoints.forEach { point ->
+                            val pIdx = point.candleIndex
+                            if (pIdx in startIndex..endIndex) {
+                                val localIdx = pIdx - startIndex
+                                val x = (localIdx * candleSlotWidth) + (candleSlotWidth / 2f)
+                                val y = priceToY(point.price)
+
+                                if (!pathStarted) {
+                                    patternPath.moveTo(x, y)
+                                    pathStarted = true
+                                } else {
+                                    patternPath.lineTo(x, y)
+                                }
+
+                                drawCircle(color = GoldPrimary, radius = 3.5f, center = Offset(x, y))
+                            }
+                        }
+
+                        if (pathStarted) {
+                            drawPath(path = patternPath, color = pathColor.copy(alpha = 0.85f), style = Stroke(width = 2.5f))
+                        }
+
+                        if (pattern.necklinePrice != null) {
+                            val yNeck = priceToY(pattern.necklinePrice)
+                            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                            drawLine(
+                                color = GoldPrimary,
+                                start = Offset(0f, yNeck),
+                                end = Offset(chartW, yNeck),
+                                strokeWidth = 1.5f,
+                                pathEffect = dashEffect
+                            )
+                        }
+                    }
+
+                    if (pattern.category == PatternTypeCategory.CANDLESTICK) {
+                        val idx = pattern.endCandleIndex
+                        if (idx in startIndex..endIndex) {
+                            val localIdx = idx - startIndex
+                            val x = (localIdx * candleSlotWidth) + (candleSlotWidth / 2f)
+                            val candle = displayCandles[localIdx]
+
+                            if (pattern.action == SignalAction.BUY) {
+                                val yLow = priceToY(candle.low) + 6f
+                                val triPath = Path().apply {
+                                    moveTo(x, yLow)
+                                    lineTo(x - 5f, yLow + 9f)
+                                    lineTo(x + 5f, yLow + 9f)
+                                    close()
+                                }
+                                drawPath(path = triPath, color = BuyGreen)
+                            } else if (pattern.action == SignalAction.SELL) {
+                                val yHigh = priceToY(candle.high) - 6f
+                                val triPath = Path().apply {
+                                    moveTo(x, yHigh)
+                                    lineTo(x - 5f, yHigh - 9f)
+                                    lineTo(x + 5f, yHigh - 9f)
+                                    close()
+                                }
+                                drawPath(path = triPath, color = SellRed)
+                            }
+                        }
                     }
                 }
             }
+
+            // ==========================================
+            // 7. DRAW ACTIVE SIGNAL LEVELS (ENTRY, SL, TP)
+            // ==========================================
+            if (showLevels && activeSignal != null && activeSignal.instrument == instrument) {
+                val yEntry = priceToY(activeSignal.entryPrice)
+                val ySl = priceToY(activeSignal.stopLoss)
+                val yTp1 = priceToY(activeSignal.takeProfit1)
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+
+                // SL
+                drawLine(color = SellRed, start = Offset(0f, ySl), end = Offset(chartW, ySl), strokeWidth = 1.8f, pathEffect = dashEffect)
+                // Entry
+                drawLine(color = CyanEma, start = Offset(0f, yEntry), end = Offset(chartW, yEntry), strokeWidth = 1.8f, pathEffect = dashEffect)
+                // TP1
+                drawLine(color = BuyGreen, start = Offset(0f, yTp1), end = Offset(chartW, yTp1), strokeWidth = 1.8f, pathEffect = dashEffect)
+            }
+
+            // ==========================================
+            // 8. LIVE PRICE BADGE ON RIGHT SCALE
+            // ==========================================
+            val latestCandle = candles.lastOrNull()
+            if (latestCandle != null) {
+                val livePrice = latestCandle.close
+                val liveY = priceToY(livePrice)
+                val liveColor = if (latestCandle.close >= latestCandle.open) BuyGreen else SellRed
+
+                // Dotted horizontal line to current price
+                drawLine(
+                    color = liveColor.copy(alpha = 0.6f),
+                    start = Offset(0f, liveY),
+                    end = Offset(chartW, liveY),
+                    strokeWidth = 1.2f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+                )
+
+                // Current Price Badge Box in right scale
+                val badgeH = 16.dp.toPx()
+                val badgeW = 60.dp.toPx()
+                drawRect(
+                    color = liveColor,
+                    topLeft = Offset(chartW + 2.dp.toPx(), liveY - (badgeH / 2f)),
+                    size = Size(badgeW, badgeH)
+                )
+
+                val badgePaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.BLACK
+                    textSize = 9.sp.toPx()
+                    isAntiAlias = true
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+                drawContext.canvas.nativeCanvas.drawText(
+                    instrument.formatPrice(livePrice),
+                    chartW + 5.dp.toPx(),
+                    liveY + 3.5.dp.toPx(),
+                    badgePaint
+                )
+            }
+
+            // ==========================================
+            // 9. INTERACTIVE CROSSHAIR IF CANDLE SELECTED
+            // ==========================================
+            if (selectedCandleIndex != null && selectedCandleIndex in startIndex..endIndex) {
+                val localIdx = selectedCandleIndex - startIndex
+                val inspected = displayCandles[localIdx]
+                val x = (localIdx * candleSlotWidth) + (candleSlotWidth / 2f)
+                val y = priceToY(inspected.close)
+                val crosshairDash = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f)
+
+                drawLine(color = Color.White.copy(alpha = 0.5f), start = Offset(x, 0f), end = Offset(x, chartH), strokeWidth = 1f, pathEffect = crosshairDash)
+                drawLine(color = Color.White.copy(alpha = 0.5f), start = Offset(0f, y), end = Offset(chartW, y), strokeWidth = 1f, pathEffect = crosshairDash)
+
+                drawCircle(color = GoldPrimary, radius = 4f, center = Offset(x, y))
+                drawCircle(color = Color.White, radius = 2f, center = Offset(x, y))
+            }
         }
 
-        // Draw Active Signal Order Levels (Entry, SL, TP)
-        if (showLevels && activeSignal != null && activeSignal.instrument == instrument) {
-            val yEntry = priceToY(activeSignal.entryPrice)
-            val ySl = priceToY(activeSignal.stopLoss)
-            val yTp1 = priceToY(activeSignal.takeProfit1)
-            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+        // ==========================================
+        // 10. FLOATING ZOOM & SCROLL CONTROLS OVERLAY
+        // ==========================================
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 8.dp, bottom = 26.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Zoom In (+)
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable {
+                        visibleCandlesCount = (visibleCandlesCount - 5f).coerceIn(minVisible, maxVisible)
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Zoom In",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
 
-            // SL Line (Red dashed)
-            drawLine(
-                color = SellRed,
-                start = Offset(0f, ySl),
-                end = Offset(w, ySl),
-                strokeWidth = 2f,
-                pathEffect = dashEffect
-            )
+            // Zoom Out (-)
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable {
+                        visibleCandlesCount = (visibleCandlesCount + 5f).coerceIn(minVisible, maxVisible)
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Zoom Out",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
 
-            // Entry Line (Cyan dashed)
-            drawLine(
-                color = CyanEma,
-                start = Offset(0f, yEntry),
-                end = Offset(w, yEntry),
-                strokeWidth = 2f,
-                pathEffect = dashEffect
-            )
-
-            // TP1 Line (Green dashed)
-            drawLine(
-                color = BuyGreen,
-                start = Offset(0f, yTp1),
-                end = Offset(w, yTp1),
-                strokeWidth = 2f,
-                pathEffect = dashEffect
-            )
-        }
-
-        // Draw Interactive Crosshair if candle is selected
-        if (selectedCandleIndex != null && selectedCandleIndex in candles.indices) {
-            val inspected = candles[selectedCandleIndex]
-            val x = (selectedCandleIndex * candleSlotWidth) + (candleSlotWidth / 2f)
-            val y = priceToY(inspected.close)
-            val crosshairDash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-
-            drawLine(
-                color = Color.White.copy(alpha = 0.45f),
-                start = Offset(x, 0f),
-                end = Offset(x, h),
-                strokeWidth = 1f,
-                pathEffect = crosshairDash
-            )
-
-            drawLine(
-                color = Color.White.copy(alpha = 0.45f),
-                start = Offset(0f, y),
-                end = Offset(w, y),
-                strokeWidth = 1f,
-                pathEffect = crosshairDash
-            )
-
-            drawCircle(color = GoldPrimary, radius = 4.5f, center = Offset(x, y))
-            drawCircle(color = Color.White, radius = 2f, center = Offset(x, y))
+            // Reset to Latest Candles
+            if (scrollOffset > 0f) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = GoldPrimary.copy(alpha = 0.2f),
+                    border = BorderStroke(1.dp, GoldPrimary),
+                    modifier = Modifier
+                        .height(28.dp)
+                        .clickable { scrollOffset = 0f }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(horizontal = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FastForward,
+                            contentDescription = "Live",
+                            tint = GoldPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Terkini",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldPrimary
+                        )
+                    }
+                }
+            }
         }
     }
 }
