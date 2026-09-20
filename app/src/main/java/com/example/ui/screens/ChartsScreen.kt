@@ -9,7 +9,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -176,6 +177,26 @@ fun ChartsScreen(
         }
 
         // Bottom Market Info & Spread
+        var showSpreadInfoDialog by remember { mutableStateOf(false) }
+
+        // Determine spread condition
+        val (spreadBadgeText, spreadBadgeColor, spreadDesc) = when (instrument) {
+            TradingInstrument.XAUUSD -> {
+                when {
+                    instrument.defaultSpreadPips <= 1.5 -> Triple("KETAT", BuyGreen, "Sangat bagus untuk scalping M1/M5")
+                    instrument.defaultSpreadPips <= 3.0 -> Triple("NORMAL", GoldPrimary, "Kondisi reguler pasar")
+                    else -> Triple("MELEBAR", SellRed, "Biaya tinggi / hindari entry baru")
+                }
+            }
+            TradingInstrument.EURUSD -> {
+                when {
+                    instrument.defaultSpreadPips <= 0.5 -> Triple("KETAT", BuyGreen, "Sangat bagus untuk scalping M1/M5")
+                    instrument.defaultSpreadPips <= 1.5 -> Triple("NORMAL", GoldPrimary, "Kondisi reguler pasar")
+                    else -> Triple("MELEBAR", SellRed, "Biaya tinggi / hindari entry baru")
+                }
+            }
+        }
+
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -188,14 +209,48 @@ fun ChartsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(text = "Spread Rata-rata", fontSize = 11.sp, color = TextSecondary)
-                    Text(
-                        text = "${instrument.defaultSpreadPips} pips",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showSpreadInfoDialog = true }
+                        .padding(4.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(text = "Spread Rata-rata", fontSize = 11.sp, color = TextSecondary)
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Penjelasan Spread",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "${instrument.defaultSpreadPips} pips",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = spreadBadgeColor.copy(alpha = 0.18f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, spreadBadgeColor.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = spreadBadgeText,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = spreadBadgeColor,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
                 Column {
                     Text(text = "Volatilitas ATR", fontSize = 11.sp, color = TextSecondary)
@@ -219,6 +274,90 @@ fun ChartsScreen(
                     )
                 }
             }
+        }
+
+        if (showSpreadInfoDialog) {
+            AlertDialog(
+                onDismissRequest = { showSpreadInfoDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = GoldPrimary
+                        )
+                        Text(text = "Panduan Status Spread", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Spread adalah selisih harga Beli (Ask) dan Jual (Bid) sebagai biaya transaksi broker:",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // Green
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BuyGreen.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BuyGreen.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "🟢 SPREAD KETAT (Optimal)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BuyGreen)
+                                Text(
+                                    text = "Biaya transaksi sangat murah. Waktu terbaik untuk scalping cepat di timeframe M1/M5.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        // Yellow/Normal
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GoldPrimary.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "🟡 SPREAD NORMAL (Reguler)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GoldPrimary)
+                                Text(
+                                    text = "Kondisi pasar normal. Aman untuk trading scalping dan intraday standar.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        // Red/Wide
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = SellRed.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SellRed.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "🔴 SPREAD MELEBAR (Waspada)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = SellRed)
+                                Text(
+                                    text = "Terjadi saat rilis berita High Impact (News), pergantian sesi subuh, atau akhir pekan. Hindari open posisi baru.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSpreadInfoDialog = false }) {
+                        Text("Mengerti", color = GoldPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
         }
     }
 }

@@ -43,24 +43,24 @@ class ScalpingSignalEngine(
     private val lastSignalAction = mutableMapOf<TradingInstrument, SignalAction>()
 
     // Current prices
-    private val _xauPrice = MutableStateFlow(2654.50)
+    private val _xauPrice = MutableStateFlow(4377.34)
     val xauPrice: StateFlow<Double> = _xauPrice.asStateFlow()
 
-    private val _eurPrice = MutableStateFlow(1.08425)
+    private val _eurPrice = MutableStateFlow(1.14834)
     val eurPrice: StateFlow<Double> = _eurPrice.asStateFlow()
 
     // Price change percentage
-    private val _xauChangePct = MutableStateFlow(0.42)
+    private val _xauChangePct = MutableStateFlow(0.84)
     val xauChangePct: StateFlow<Double> = _xauChangePct.asStateFlow()
 
-    private val _eurChangePct = MutableStateFlow(-0.15)
+    private val _eurChangePct = MutableStateFlow(0.07)
     val eurChangePct: StateFlow<Double> = _eurChangePct.asStateFlow()
 
     // High / Low 24h
-    val xauHigh = 2668.80
-    val xauLow = 2642.10
-    val eurHigh = 1.08750
-    val eurLow = 1.08210
+    val xauHigh = 4399.58
+    val xauLow = 4334.02
+    val eurHigh = 1.14913
+    val eurLow = 1.14544
 
     // Candle series per instrument and timeframe
     private val candleMap = mutableMapOf<Pair<TradingInstrument, Timeframe>, MutableList<Candle>>()
