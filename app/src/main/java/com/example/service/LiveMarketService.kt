@@ -209,26 +209,34 @@ class LiveMarketService {
             return@withContext generateFallbackCandles(instrument, timeframe)
         }
 
-        // For EUR/USD, fetch genuine interbank candles directly from Yahoo Finance EURUSD=X
-        if (instrument == TradingInstrument.EURUSD) {
-            val interval = when (timeframe) {
-                Timeframe.M1 -> "1m"
-                Timeframe.M5 -> "5m"
-                Timeframe.M15 -> "15m"
-                Timeframe.M30 -> "30m"
-                Timeframe.H1 -> "60m"
-            }
-            val range = when (timeframe) {
-                Timeframe.M1 -> "1d"
-                Timeframe.M5 -> "5d"
-                Timeframe.M15 -> "5d"
-                Timeframe.M30 -> "1mo"
-                Timeframe.H1 -> "1mo"
-            }
+        val interval = when (timeframe) {
+            Timeframe.M1 -> "1m"
+            Timeframe.M5 -> "5m"
+            Timeframe.M15 -> "15m"
+            Timeframe.M30 -> "30m"
+            Timeframe.H1 -> "60m"
+        }
+        val range = when (timeframe) {
+            Timeframe.M1 -> "1d"
+            Timeframe.M5 -> "5d"
+            Timeframe.M15 -> "5d"
+            Timeframe.M30 -> "1mo"
+            Timeframe.H1 -> "1mo"
+        }
 
+        // Symbols to query on Yahoo Finance Interbank:
+        // For Gold: GC=F (COMEX Gold, standard global interbank price) or XAUUSD=X
+        // For EUR: EURUSD=X
+        val symbolsToTry = if (instrument == TradingInstrument.XAUUSD) {
+            listOf("GC=F", "XAUUSD=X")
+        } else {
+            listOf("EURUSD=X")
+        }
+
+        for (symbol in symbolsToTry) {
             for (host in yahooHosts) {
                 try {
-                    val url = "$host/v8/finance/chart/EURUSD=X?interval=$interval&range=$range"
+                    val url = "$host/v8/finance/chart/$symbol?interval=$interval&range=$range"
                     val request = Request.Builder()
                         .url(url)
                         .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")

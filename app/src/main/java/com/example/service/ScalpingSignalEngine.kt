@@ -242,17 +242,55 @@ class ScalpingSignalEngine(
     }
 
     private fun updateLastCandle(instrument: TradingInstrument, currentPrice: Double) {
+        val now = System.currentTimeMillis()
         for (tf in Timeframe.values()) {
             val list = candleMap[Pair(instrument, tf)] ?: continue
+            val intervalMs = tf.seconds * 1000L
+            val currentCandleSlotTime = (now / intervalMs) * intervalMs
+
             if (list.isNotEmpty()) {
                 val last = list.last()
-                val updated = last.copy(
-                    high = maxOf(last.high, currentPrice),
-                    low = minOf(last.low, currentPrice),
-                    close = currentPrice,
-                    volume = last.volume + Random.nextDouble() * 2.0
+                val lastCandleSlotTime = (last.timestamp / intervalMs) * intervalMs
+
+                if (currentCandleSlotTime > lastCandleSlotTime) {
+                    // New candle period started (e.g. new minute :00, or :05, :15, :30, :00)
+                    // The previous candle is finalized at its last close.
+                    // A fresh candle opens at current tick price.
+                    val newCandle = Candle(
+                        timestamp = currentCandleSlotTime,
+                        open = currentPrice,
+                        high = currentPrice,
+                        low = currentPrice,
+                        close = currentPrice,
+                        volume = 1.0
+                    )
+                    list.add(newCandle)
+                    // Keep list bounded to last 120 candles for optimal performance
+                    if (list.size > 120) {
+                        list.removeAt(0)
+                    }
+                } else {
+                    // Within the same candle period: update High, Low, Close, and tick volume
+                    val updated = last.copy(
+                        high = maxOf(last.high, currentPrice),
+                        low = minOf(last.low, currentPrice),
+                        close = currentPrice,
+                        volume = last.volume + 1.0
+                    )
+                    list[list.size - 1] = updated
+                }
+            } else {
+                // Initialize first candle if empty
+                list.add(
+                    Candle(
+                        timestamp = currentCandleSlotTime,
+                        open = currentPrice,
+                        high = currentPrice,
+                        low = currentPrice,
+                        close = currentPrice,
+                        volume = 1.0
+                    )
                 )
-                list[list.size - 1] = updated
             }
         }
     }
