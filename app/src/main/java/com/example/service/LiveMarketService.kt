@@ -236,11 +236,6 @@ class LiveMarketService {
     }
 
     suspend fun fetchLiveCandles(instrument: TradingInstrument, timeframe: Timeframe, livePriceRef: Double? = null): List<Candle>? = withContext(Dispatchers.IO) {
-        // If weekend, return authentic MT5-matching historical candles directly
-        if (MarketSessionHelper.isWeekend()) {
-            return@withContext generateFallbackCandles(instrument, timeframe, livePriceRef)
-        }
-
         val interval = when (timeframe) {
             Timeframe.M1 -> "1m"
             Timeframe.M5 -> "5m"
@@ -271,7 +266,9 @@ class LiveMarketService {
                     val url = "$host/v8/finance/chart/$symbol?interval=$interval&range=$range"
                     val request = Request.Builder()
                         .url(url)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
+                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                        .addHeader("Accept", "application/json, text/plain, */*")
+                        .addHeader("Referer", "https://finance.yahoo.com/")
                         .build()
 
                     client.newCall(request).execute().use { response ->
@@ -329,10 +326,10 @@ class LiveMarketService {
             }
         }
 
-        return@withContext generateFallbackCandles(instrument, timeframe, livePriceRef)
+        return@withContext null
     }
 
-    private fun generateFallbackCandles(
+    fun generateFallbackCandles(
         instrument: TradingInstrument,
         timeframe: Timeframe,
         livePriceRef: Double? = null

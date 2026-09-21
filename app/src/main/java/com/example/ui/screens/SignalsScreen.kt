@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.SignalEntity
@@ -45,6 +46,8 @@ fun SignalsScreen(
     newsShield: NewsShieldStatus? = null,
     onOpenCalendar: () -> Unit = {}
 ) {
+    var isNewsBannerDismissed by remember { mutableStateOf(false) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -52,12 +55,12 @@ fun SignalsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
     ) {
-        // News Shield / Economic News Banner
-        if (newsShield != null) {
-            item {
-                if (newsShield.isShieldActive) {
+        // Ultra-Compact News Banner with Dismiss Button (solves screen space consumption & text wrap bugs)
+        if (newsShield != null && !isNewsBannerDismissed) {
+            if (newsShield.isShieldActive) {
+                item {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = SellRed.copy(alpha = 0.16f),
                         border = BorderStroke(1.dp, SellRed.copy(alpha = 0.5f)),
                         modifier = Modifier
@@ -65,82 +68,85 @@ fun SignalsScreen(
                             .clickable { onOpenCalendar() }
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = SellRed
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = "Peringatan Berita",
-                                    tint = Color.White,
-                                    modifier = Modifier
-                                        .padding(6.dp)
-                                        .size(16.dp)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "NEWS SHIELD AKTIF (High Impact)",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SellRed
-                                )
-                                Text(
-                                    text = newsShield.warningMessage,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2
-                                )
-                            }
                             Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Buka Kalender",
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Peringatan Berita",
+                                tint = SellRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "NEWS SHIELD: ${newsShield.warningMessage}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SellRed,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Tutup Peringatan",
                                 tint = TextSecondary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { isNewsBannerDismissed = true }
                             )
                         }
                     }
-                } else if (newsShield.currentEvent != null && newsShield.minutesUntil <= 120) {
-                    val ev = newsShield.currentEvent
+                }
+            } else if (newsShield.currentEvent != null && newsShield.minutesUntil <= 120) {
+                val ev = newsShield.currentEvent
+                item {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        border = BorderStroke(0.5.dp, GoldPrimary.copy(alpha = 0.3f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onOpenCalendar() }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarToday,
-                                    contentDescription = null,
-                                    tint = GoldPrimary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "${ev.currency.flag} ${ev.title}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                tint = GoldPrimary,
+                                modifier = Modifier.size(14.dp)
+                            )
                             Text(
-                                text = ev.getStatusLabel(),
+                                text = "${ev.currency.flag} ${ev.title}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = ev.getStatusLabel().replace("Dalam ", "In "),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = GoldPrimary
+                                color = GoldPrimary,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Sembunyikan Banner Berita",
+                                tint = TextSecondary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { isNewsBannerDismissed = true }
                             )
                         }
                     }

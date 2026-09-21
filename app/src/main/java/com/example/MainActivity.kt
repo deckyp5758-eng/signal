@@ -90,6 +90,8 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 viewModel.setAppForeground(true)
             } else if (event == Lifecycle.Event.ON_PAUSE) {
                 viewModel.setAppForeground(false)
+            } else if (event == Lifecycle.Event.ON_DESTROY) {
+                viewModel.engine.clearSessionOnAppClose()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

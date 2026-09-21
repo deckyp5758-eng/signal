@@ -209,6 +209,19 @@ class ScalpingSignalEngine(
         }
     }
 
+    fun clearSessionOnAppClose() {
+        candleMap.clear()
+        _activeSignals.value = mapOf(
+            TradingInstrument.XAUUSD to null,
+            TradingInstrument.EURUSD to null
+        )
+        scope.launch(Dispatchers.IO) {
+            try {
+                signalDao.clearAllSignals()
+            } catch (_: Exception) {}
+        }
+    }
+
     fun clearHistoricalSignals() {
         scope.launch(Dispatchers.IO) {
             signalDao.clearAllSignals()
@@ -226,6 +239,7 @@ class ScalpingSignalEngine(
 
             for (tf in Timeframe.values()) {
                 val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
+                val xauKey = Pair(TradingInstrument.XAUUSD, tf)
                 if (!xauCandles.isNullOrEmpty()) {
                     val mutableXau = xauCandles.toMutableList()
                     if (currentXau > 0.0) {
@@ -237,10 +251,16 @@ class ScalpingSignalEngine(
                             low = minOf(last.low, currentXau)
                         )
                     }
-                    candleMap[Pair(TradingInstrument.XAUUSD, tf)] = mutableXau
+                    candleMap[xauKey] = mutableXau
+                } else {
+                    val existing = candleMap[xauKey]
+                    if (!existing.isNullOrEmpty() && currentXau > 0.0) {
+                        updateLastCandle(TradingInstrument.XAUUSD, currentXau)
+                    }
                 }
 
                 val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
+                val eurKey = Pair(TradingInstrument.EURUSD, tf)
                 if (!eurCandles.isNullOrEmpty()) {
                     val mutableEur = eurCandles.toMutableList()
                     if (currentEur > 0.0) {
@@ -252,7 +272,12 @@ class ScalpingSignalEngine(
                             low = minOf(last.low, currentEur)
                         )
                     }
-                    candleMap[Pair(TradingInstrument.EURUSD, tf)] = mutableEur
+                    candleMap[eurKey] = mutableEur
+                } else {
+                    val existing = candleMap[eurKey]
+                    if (!existing.isNullOrEmpty() && currentEur > 0.0) {
+                        updateLastCandle(TradingInstrument.EURUSD, currentEur)
+                    }
                 }
             }
             withContext(Dispatchers.Main) {
