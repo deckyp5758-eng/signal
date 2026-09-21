@@ -237,46 +237,52 @@ class ScalpingSignalEngine(
             val currentXau = _xauPrice.value
             val currentEur = _eurPrice.value
 
-            for (tf in Timeframe.values()) {
-                val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
-                val xauKey = Pair(TradingInstrument.XAUUSD, tf)
-                if (!xauCandles.isNullOrEmpty()) {
-                    val mutableXau = xauCandles.toMutableList()
-                    if (currentXau > 0.0) {
-                        val lastIdx = mutableXau.lastIndex
-                        val last = mutableXau[lastIdx]
-                        mutableXau[lastIdx] = last.copy(
-                            close = currentXau,
-                            high = maxOf(last.high, currentXau),
-                            low = minOf(last.low, currentXau)
-                        )
+            coroutineScope {
+                for (tf in Timeframe.values()) {
+                    launch(Dispatchers.IO) {
+                        val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
+                        val xauKey = Pair(TradingInstrument.XAUUSD, tf)
+                        if (!xauCandles.isNullOrEmpty()) {
+                            val mutableXau = xauCandles.toMutableList()
+                            if (currentXau > 0.0) {
+                                val lastIdx = mutableXau.lastIndex
+                                val last = mutableXau[lastIdx]
+                                mutableXau[lastIdx] = last.copy(
+                                    close = currentXau,
+                                    high = maxOf(last.high, currentXau),
+                                    low = minOf(last.low, currentXau)
+                                )
+                            }
+                            candleMap[xauKey] = mutableXau
+                        } else {
+                            val existing = candleMap[xauKey]
+                            if (!existing.isNullOrEmpty() && currentXau > 0.0) {
+                                updateLastCandle(TradingInstrument.XAUUSD, currentXau)
+                            }
+                        }
                     }
-                    candleMap[xauKey] = mutableXau
-                } else {
-                    val existing = candleMap[xauKey]
-                    if (!existing.isNullOrEmpty() && currentXau > 0.0) {
-                        updateLastCandle(TradingInstrument.XAUUSD, currentXau)
-                    }
-                }
 
-                val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
-                val eurKey = Pair(TradingInstrument.EURUSD, tf)
-                if (!eurCandles.isNullOrEmpty()) {
-                    val mutableEur = eurCandles.toMutableList()
-                    if (currentEur > 0.0) {
-                        val lastIdx = mutableEur.lastIndex
-                        val last = mutableEur[lastIdx]
-                        mutableEur[lastIdx] = last.copy(
-                            close = currentEur,
-                            high = maxOf(last.high, currentEur),
-                            low = minOf(last.low, currentEur)
-                        )
-                    }
-                    candleMap[eurKey] = mutableEur
-                } else {
-                    val existing = candleMap[eurKey]
-                    if (!existing.isNullOrEmpty() && currentEur > 0.0) {
-                        updateLastCandle(TradingInstrument.EURUSD, currentEur)
+                    launch(Dispatchers.IO) {
+                        val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
+                        val eurKey = Pair(TradingInstrument.EURUSD, tf)
+                        if (!eurCandles.isNullOrEmpty()) {
+                            val mutableEur = eurCandles.toMutableList()
+                            if (currentEur > 0.0) {
+                                val lastIdx = mutableEur.lastIndex
+                                val last = mutableEur[lastIdx]
+                                mutableEur[lastIdx] = last.copy(
+                                    close = currentEur,
+                                    high = maxOf(last.high, currentEur),
+                                    low = minOf(last.low, currentEur)
+                                )
+                            }
+                            candleMap[eurKey] = mutableEur
+                        } else {
+                            val existing = candleMap[eurKey]
+                            if (!existing.isNullOrEmpty() && currentEur > 0.0) {
+                                updateLastCandle(TradingInstrument.EURUSD, currentEur)
+                            }
+                        }
                     }
                 }
             }

@@ -61,8 +61,8 @@ object MarketSessionHelper {
 class LiveMarketService {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
     // Authentic official Friday interbank close reference (matching MetaTrader 5 Web quotes)
@@ -245,10 +245,10 @@ class LiveMarketService {
         }
         val range = when (timeframe) {
             Timeframe.M1 -> "1d"
-            Timeframe.M5 -> "5d"
-            Timeframe.M15 -> "5d"
-            Timeframe.M30 -> "1mo"
-            Timeframe.H1 -> "1mo"
+            Timeframe.M5 -> "2d"
+            Timeframe.M15 -> "2d"
+            Timeframe.M30 -> "5d"
+            Timeframe.H1 -> "5d"
         }
 
         // Symbols to query on Yahoo Finance Spot Interbank:
@@ -296,9 +296,13 @@ class LiveMarketService {
                         val candles = mutableListOf<Candle>()
                         val total = timestamps.length()
                         val startIdx = (total - 80).coerceAtLeast(0)
+                        val thirtyHoursAgo = System.currentTimeMillis() - (30 * 3600 * 1000L)
 
                         for (i in startIdx until total) {
                             if (opens.isNull(i) || closes.isNull(i)) continue
+                            val time = timestamps.getLong(i) * 1000L
+                            if (time < thirtyHoursAgo && total > 30) continue
+
                             val open = opens.optDouble(i, Double.NaN)
                             val close = closes.optDouble(i, open)
 
@@ -313,7 +317,6 @@ class LiveMarketService {
                             val high = maxOf(rawHigh, maxOf(open, close))
                             val low = minOf(rawLow, minOf(open, close))
                             val vol = if (volumes != null && !volumes.isNull(i)) volumes.optDouble(i, 100.0) else 100.0
-                            val time = timestamps.getLong(i) * 1000L
 
                             candles.add(Candle(time, open, high, low, close, vol))
                         }
