@@ -599,33 +599,12 @@ fun AutoCalculatedResultCard(
                             }
                         }
                         Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "$lotFormatted Lot",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            FilledTonalButton(
-                                onClick = {
-                                    onCopySingle(lotFormatted, "Lot Size")
-                                },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Salin Lot",
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Salin Lot", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                        Text(
+                            text = "$lotFormatted Lot",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
 
                     Column(horizontalAlignment = Alignment.End) {
@@ -719,7 +698,7 @@ fun AutoCalculatedResultCard(
                         onCopyRaw = { raw -> onCopySingle(raw, "Stop Loss (SL)") }
                     )
 
-                    Divider(color = DarkBorder, thickness = 0.5.dp)
+                    HorizontalDivider(color = DarkBorder, thickness = 0.5.dp)
 
                     LevelItemRow(
                         label = "Take Profit 1 (Target Konservatif)",
