@@ -48,6 +48,7 @@ import com.example.data.model.*
 import com.example.service.IndicatorCalculator
 import com.example.service.PatternRecognitionEngine
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
@@ -436,6 +437,7 @@ fun ChartsScreen(
                         CandlestickChart(
                             candles = candles,
                             instrument = instrument,
+                            timeframe = timeframe,
                             activeSignal = activeSignal,
                             detectedPatterns = allDetectedPatterns,
                             showEma = showEma,
@@ -1094,6 +1096,7 @@ fun ChartsScreen(
                         CandlestickChart(
                             candles = candles,
                             instrument = instrument,
+                            timeframe = timeframe,
                             activeSignal = activeSignal,
                             detectedPatterns = allDetectedPatterns,
                             showEma = showEma,
@@ -1398,6 +1401,7 @@ fun PatternDetailCard(
 fun CandlestickChart(
     candles: List<Candle>,
     instrument: TradingInstrument,
+    timeframe: Timeframe = Timeframe.M1,
     activeSignal: ScalpSignal?,
     detectedPatterns: List<DetectedPattern> = emptyList(),
     showEma: Boolean,
@@ -1410,6 +1414,26 @@ fun CandlestickChart(
     val closes = remember(candles) { candles.map { it.close } }
     val ema9 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 9) }
     val ema21 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 21) }
+    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
+
+    // Candle Countdown Timer state (updates every second)
+    var currentTimeMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            currentTimeMs = System.currentTimeMillis()
+        }
+    }
+
+    val candleRemainingFormatted = remember(currentTimeMs, timeframe) {
+        val intervalMs = timeframe.seconds * 1000L
+        val elapsedInCurrentCandle = currentTimeMs % intervalMs
+        val remainingMs = maxOf(0L, intervalMs - elapsedInCurrentCandle)
+        val remainingSec = (remainingMs / 1000L).coerceAtLeast(0L)
+        val minutes = remainingSec / 60
+        val seconds = remainingSec % 60
+        String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    }
 
     // Interactive Zoom and Pan State
     // visibleCandlesCount: default 35 candles, min 12 (zoomed in), max 80 (zoomed out)
@@ -1612,13 +1636,25 @@ fun CandlestickChart(
             }
 
             // ==========================================
-            // 4. DRAW VISIBLE CANDLESTICKS
+            // 4. DRAW VISIBLE CANDLESTICKS & VOLUME HISTOGRAM
             // ==========================================
+            val maxVolume = displayCandles.maxOfOrNull { it.volume }?.coerceAtLeast(1.0) ?: 1.0
+            val volumeAreaHeight = chartH * 0.18f
+
             for (i in 0 until vCount) {
                 val candle = displayCandles[i]
                 val xCenter = (i * candleSlotWidth) + (candleSlotWidth / 2f)
                 val isBull = candle.close >= candle.open
                 val color = if (isBull) BuyGreen else SellRed
+
+                // Subtle Volume Histogram bar at chart bottom (MT5 / TradingView style)
+                val volRatio = (candle.volume / maxVolume).toFloat().coerceIn(0.05f, 1f)
+                val volBarH = volRatio * volumeAreaHeight
+                drawRect(
+                    color = color.copy(alpha = 0.22f),
+                    topLeft = Offset(xCenter - (bodyWidth / 2f), chartH - volBarH),
+                    size = Size(bodyWidth, volBarH)
+                )
 
                 val yHigh = priceToY(candle.high)
                 val yLow = priceToY(candle.low)
@@ -1779,44 +1815,102 @@ fun CandlestickChart(
             }
 
             // ==========================================
-            // 8. LIVE PRICE BADGE ON RIGHT SCALE
+            // 8. BID / ASK SPREAD LINES & LIVE PRICE BADGES (MT5 STYLE)
             // ==========================================
             val latestCandle = candles.lastOrNull()
             if (latestCandle != null) {
-                val livePrice = latestCandle.close
-                val liveY = priceToY(livePrice)
+                val bidPrice = latestCandle.close
+                val spreadPoints = instrument.defaultSpreadPips * instrument.pipMultiplier
+                val askPrice = bidPrice + spreadPoints
+
+                val bidY = priceToY(bidPrice)
+                val askY = priceToY(askPrice)
                 val liveColor = if (latestCandle.close >= latestCandle.open) BuyGreen else SellRed
 
-                // Dotted horizontal line to current price
+                // Dotted horizontal line for Bid Price
                 drawLine(
-                    color = liveColor.copy(alpha = 0.6f),
-                    start = Offset(0f, liveY),
-                    end = Offset(chartW, liveY),
+                    color = liveColor.copy(alpha = 0.85f),
+                    start = Offset(0f, bidY),
+                    end = Offset(chartW, bidY),
                     strokeWidth = 1.2f,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
                 )
 
-                // Current Price Badge Box in right scale
-                val badgeH = 16.dp.toPx()
-                val badgeW = 60.dp.toPx()
+                // Dotted horizontal line for Ask Price (Spread Visualization)
+                drawLine(
+                    color = SellRed.copy(alpha = 0.65f),
+                    start = Offset(0f, askY),
+                    end = Offset(chartW, askY),
+                    strokeWidth = 1.0f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f)
+                )
+
+                // Bid Price Badge Box in right scale
+                val badgeH = 15.dp.toPx()
+                val badgeW = 62.dp.toPx()
                 drawRect(
                     color = liveColor,
-                    topLeft = Offset(chartW + 2.dp.toPx(), liveY - (badgeH / 2f)),
+                    topLeft = Offset(chartW + 2.dp.toPx(), bidY - (badgeH / 2f)),
                     size = Size(badgeW, badgeH)
                 )
 
                 val badgePaint = android.graphics.Paint().apply {
                     color = android.graphics.Color.BLACK
-                    textSize = 9.sp.toPx()
+                    textSize = 8.5.sp.toPx()
                     isAntiAlias = true
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                 }
                 drawContext.canvas.nativeCanvas.drawText(
-                    instrument.formatPrice(livePrice),
-                    chartW + 5.dp.toPx(),
-                    liveY + 3.5.dp.toPx(),
+                    instrument.formatPrice(bidPrice),
+                    chartW + 4.dp.toPx(),
+                    bidY + 3.dp.toPx(),
                     badgePaint
                 )
+
+                // Ask Price mini badge if separated
+                if (abs(askY - bidY) > 10.dp.toPx()) {
+                    drawRect(
+                        color = SellRed.copy(alpha = 0.85f),
+                        topLeft = Offset(chartW + 2.dp.toPx(), askY - (11.dp.toPx() / 2f)),
+                        size = Size(badgeW, 11.dp.toPx())
+                    )
+                    val askPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.WHITE
+                        textSize = 7.5.sp.toPx()
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    }
+                    drawContext.canvas.nativeCanvas.drawText(
+                        instrument.formatPrice(askPrice),
+                        chartW + 4.dp.toPx(),
+                        askY + 2.5.dp.toPx(),
+                        askPaint
+                    )
+                }
+
+                // Candle Countdown Timer badge below Bid badge in right scale (like TradingView)
+                val timerBadgeH = 13.dp.toPx()
+                val timerBadgeTop = bidY + (badgeH / 2f) + 2.dp.toPx()
+                if (timerBadgeTop + timerBadgeH < chartH) {
+                    drawRoundRect(
+                        color = surfaceVariantColor.copy(alpha = 0.9f),
+                        topLeft = Offset(chartW + 2.dp.toPx(), timerBadgeTop),
+                        size = Size(badgeW, timerBadgeH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    )
+                    val timerPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.parseColor("#FFD54F") // Gold
+                        textSize = 8.sp.toPx()
+                        isAntiAlias = true
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "⏱ $candleRemainingFormatted",
+                        chartW + 4.dp.toPx(),
+                        timerBadgeTop + 9.5.dp.toPx(),
+                        timerPaint
+                    )
+                }
             }
 
             // ==========================================
@@ -1884,6 +1978,33 @@ fun CandlestickChart(
                         contentDescription = "Zoom Out",
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Candle Remaining Countdown Chip (Floating overlay)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.height(28.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier.padding(horizontal = 7.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Timer,
+                        contentDescription = "Candle Countdown",
+                        tint = GoldPrimary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "${timeframe.code} $candleRemainingFormatted",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
