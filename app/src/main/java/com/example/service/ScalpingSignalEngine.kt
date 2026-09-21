@@ -221,15 +221,38 @@ class ScalpingSignalEngine(
 
     private suspend fun syncLiveCandles() {
         try {
+            val currentXau = _xauPrice.value
+            val currentEur = _eurPrice.value
+
             for (tf in Timeframe.values()) {
-                val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf)
+                val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
                 if (!xauCandles.isNullOrEmpty()) {
-                    candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toMutableList()
+                    val mutableXau = xauCandles.toMutableList()
+                    if (currentXau > 0.0) {
+                        val lastIdx = mutableXau.lastIndex
+                        val last = mutableXau[lastIdx]
+                        mutableXau[lastIdx] = last.copy(
+                            close = currentXau,
+                            high = maxOf(last.high, currentXau),
+                            low = minOf(last.low, currentXau)
+                        )
+                    }
+                    candleMap[Pair(TradingInstrument.XAUUSD, tf)] = mutableXau
                 }
 
-                val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf)
+                val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
                 if (!eurCandles.isNullOrEmpty()) {
-                    candleMap[Pair(TradingInstrument.EURUSD, tf)] = eurCandles.toMutableList()
+                    val mutableEur = eurCandles.toMutableList()
+                    if (currentEur > 0.0) {
+                        val lastIdx = mutableEur.lastIndex
+                        val last = mutableEur[lastIdx]
+                        mutableEur[lastIdx] = last.copy(
+                            close = currentEur,
+                            high = maxOf(last.high, currentEur),
+                            low = minOf(last.low, currentEur)
+                        )
+                    }
+                    candleMap[Pair(TradingInstrument.EURUSD, tf)] = mutableEur
                 }
             }
             withContext(Dispatchers.Main) {

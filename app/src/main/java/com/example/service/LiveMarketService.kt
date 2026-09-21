@@ -140,6 +140,38 @@ class LiveMarketService {
                 }
             }
         } catch (_: Exception) {}
+
+        // Fallback to Yahoo Finance Spot Gold XAUUSD=X
+        for (host in yahooHosts) {
+            try {
+                val url = "$host/v8/finance/chart/XAUUSD=X?interval=1m&range=1d"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: return@use
+                        val root = JSONObject(body)
+                        val chart = root.getJSONObject("chart")
+                        val results = chart.getJSONArray("result")
+                        if (results.length() > 0) {
+                            val resultObj = results.getJSONObject(0)
+                            val meta = resultObj.getJSONObject("meta")
+                            var price = meta.optDouble("regularMarketPrice", Double.NaN)
+                            if (price.isNaN()) {
+                                price = meta.optDouble("previousClose", Double.NaN)
+                            }
+                            if (!price.isNaN() && price > 0.0) {
+                                return ((price * 100.0).roundToLong() / 100.0)
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         return null
     }
 
@@ -203,10 +235,10 @@ class LiveMarketService {
         return null
     }
 
-    suspend fun fetchLiveCandles(instrument: TradingInstrument, timeframe: Timeframe): List<Candle>? = withContext(Dispatchers.IO) {
+    suspend fun fetchLiveCandles(instrument: TradingInstrument, timeframe: Timeframe, livePriceRef: Double? = null): List<Candle>? = withContext(Dispatchers.IO) {
         // If weekend, return authentic MT5-matching historical candles directly
         if (MarketSessionHelper.isWeekend()) {
-            return@withContext generateFallbackCandles(instrument, timeframe)
+            return@withContext generateFallbackCandles(instrument, timeframe, livePriceRef)
         }
 
         val interval = when (timeframe) {
@@ -224,11 +256,11 @@ class LiveMarketService {
             Timeframe.H1 -> "1mo"
         }
 
-        // Symbols to query on Yahoo Finance Interbank:
-        // For Gold: GC=F (COMEX Gold, standard global interbank price) or XAUUSD=X
+        // Symbols to query on Yahoo Finance Spot Interbank:
+        // For Gold: Pure Spot tickers ONLY (XAUUSD=X, XAU-USD, XAU=X). NEVER use GC=F (COMEX Futures) which has $70-$100+ premium/offset.
         // For EUR: EURUSD=X
         val symbolsToTry = if (instrument == TradingInstrument.XAUUSD) {
-            listOf("GC=F", "XAUUSD=X")
+            listOf("XAUUSD=X", "XAU-USD", "XAU=X")
         } else {
             listOf("EURUSD=X")
         }
@@ -271,15 +303,22 @@ class LiveMarketService {
                         for (i in startIdx until total) {
                             if (opens.isNull(i) || closes.isNull(i)) continue
                             val open = opens.optDouble(i, Double.NaN)
-                            val high = highs.optDouble(i, open)
-                            val low = lows.optDouble(i, open)
                             val close = closes.optDouble(i, open)
+
+                            if (open.isNaN() || close.isNaN() || open <= 0.0 || close <= 0.0) continue
+
+                            var rawHigh = if (!highs.isNull(i)) highs.optDouble(i, maxOf(open, close)) else maxOf(open, close)
+                            var rawLow = if (!lows.isNull(i)) lows.optDouble(i, minOf(open, close)) else minOf(open, close)
+
+                            if (rawHigh.isNaN() || rawHigh <= 0.0) rawHigh = maxOf(open, close)
+                            if (rawLow.isNaN() || rawLow <= 0.0) rawLow = minOf(open, close)
+
+                            val high = maxOf(rawHigh, maxOf(open, close))
+                            val low = minOf(rawLow, minOf(open, close))
                             val vol = if (volumes != null && !volumes.isNull(i)) volumes.optDouble(i, 100.0) else 100.0
                             val time = timestamps.getLong(i) * 1000L
 
-                            if (!open.isNaN() && !close.isNaN() && open > 0.0) {
-                                candles.add(Candle(time, open, high, low, close, vol))
-                            }
+                            candles.add(Candle(time, open, high, low, close, vol))
                         }
 
                         if (candles.isNotEmpty()) {
@@ -290,12 +329,20 @@ class LiveMarketService {
             }
         }
 
-        return@withContext generateFallbackCandles(instrument, timeframe)
+        return@withContext generateFallbackCandles(instrument, timeframe, livePriceRef)
     }
 
-    private fun generateFallbackCandles(instrument: TradingInstrument, timeframe: Timeframe): List<Candle> {
+    private fun generateFallbackCandles(
+        instrument: TradingInstrument,
+        timeframe: Timeframe,
+        livePriceRef: Double? = null
+    ): List<Candle> {
         val count = 60
-        val basePrice = if (instrument == TradingInstrument.XAUUSD) fridayCloseXau else fridayCloseEur
+        val basePrice = if (livePriceRef != null && livePriceRef > 0.0) {
+            livePriceRef
+        } else {
+            if (instrument == TradingInstrument.XAUUSD) fridayCloseXau else fridayCloseEur
+        }
         val step = if (instrument == TradingInstrument.XAUUSD) 0.65 else 0.00015
         val intervalMs = when (timeframe) {
             Timeframe.M1 -> 60_000L
