@@ -122,32 +122,15 @@ class LiveMarketService {
      * Pure unmanipulated Spot Gold (XAU/USD) - Direct market feed with ZERO artificial offset.
      */
     private fun fetchPureSpotGold(): Double? {
-        try {
-            val url = "https://api.gold-api.com/price/XAU"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@use
-                    val json = JSONObject(body)
-                    val price = json.optDouble("price", Double.NaN)
-                    if (!price.isNaN() && price > 0.0) {
-                        return ((price * 100.0).roundToLong() / 100.0)
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Fallback to Yahoo Finance Spot Gold XAUUSD=X
+        // Direct Yahoo Finance Spot Gold XAUUSD=X (Unified Source of Truth)
         for (host in yahooHosts) {
             try {
                 val url = "$host/v8/finance/chart/XAUUSD=X?interval=1m&range=1d"
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    .addHeader("Accept", "application/json, text/plain, */*")
+                    .addHeader("Referer", "https://finance.yahoo.com/")
                     .build()
 
                 client.newCall(request).execute().use { response ->

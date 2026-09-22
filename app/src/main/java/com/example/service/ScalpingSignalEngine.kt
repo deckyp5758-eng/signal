@@ -247,13 +247,18 @@ class ScalpingSignalEngine(
                         if (currentXau > 0.0) {
                             val lastIdx = mutableXau.lastIndex
                             val last = mutableXau[lastIdx]
-                            mutableXau[lastIdx] = last.copy(
-                                close = currentXau,
-                                high = maxOf(last.high, currentXau),
-                                low = minOf(last.low, currentXau)
-                            )
+                            val diffRatio = abs(currentXau - last.close) / last.close
+                            if (diffRatio < 0.015) {
+                                mutableXau[lastIdx] = last.copy(
+                                    close = currentXau,
+                                    high = maxOf(last.high, currentXau),
+                                    low = minOf(last.low, currentXau)
+                                )
+                            }
                         }
                         candleMap[xauKey] = mutableXau
+                    } else if (candleMap[xauKey].isNullOrEmpty()) {
+                        candleMap[xauKey] = liveMarketService.generateFallbackCandles(TradingInstrument.XAUUSD, Timeframe.M5, currentXau).toMutableList()
                     }
                 }
 
@@ -265,13 +270,18 @@ class ScalpingSignalEngine(
                         if (currentEur > 0.0) {
                             val lastIdx = mutableEur.lastIndex
                             val last = mutableEur[lastIdx]
-                            mutableEur[lastIdx] = last.copy(
-                                close = currentEur,
-                                high = maxOf(last.high, currentEur),
-                                low = minOf(last.low, currentEur)
-                            )
+                            val diffRatio = abs(currentEur - last.close) / last.close
+                            if (diffRatio < 0.015) {
+                                mutableEur[lastIdx] = last.copy(
+                                    close = currentEur,
+                                    high = maxOf(last.high, currentEur),
+                                    low = minOf(last.low, currentEur)
+                                )
+                            }
                         }
                         candleMap[eurKey] = mutableEur
+                    } else if (candleMap[eurKey].isNullOrEmpty()) {
+                        candleMap[eurKey] = liveMarketService.generateFallbackCandles(TradingInstrument.EURUSD, Timeframe.M5, currentEur).toMutableList()
                     }
                 }
             }
@@ -311,6 +321,12 @@ class ScalpingSignalEngine(
             if (list.isNotEmpty()) {
                 val last = list.last()
                 val lastCandleSlotTime = (last.timestamp / intervalMs) * intervalMs
+
+                // Ignore extreme outlier ticks (>1.5% deviation) from third-party vendor mismatch
+                val diffRatio = abs(currentPrice - last.close) / last.close
+                if (diffRatio > 0.015) {
+                    continue
+                }
 
                 if (currentCandleSlotTime > lastCandleSlotTime) {
                     // New candle period started (e.g. new minute :00, or :05, :15, :30, :00)
@@ -365,7 +381,15 @@ class ScalpingSignalEngine(
     }
 
     fun getCandles(instrument: TradingInstrument, timeframe: Timeframe): List<Candle> {
-        return candleMap[Pair(instrument, timeframe)]?.toList() ?: emptyList()
+        val key = Pair(instrument, timeframe)
+        val existing = candleMap[key]
+        if (existing.isNullOrEmpty()) {
+            val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
+            val baseline = liveMarketService.generateFallbackCandles(instrument, timeframe, livePrice).toMutableList()
+            candleMap[key] = baseline
+            return baseline.toList()
+        }
+        return existing.toList()
     }
 
     fun manualScanSignals() {
