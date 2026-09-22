@@ -198,27 +198,7 @@ fun ChartsScreen(
             }
         }
 
-        if (viewMode == ChartViewMode.BROKER_WEB) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, DarkBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(480.dp)
-                ) {
-                    WebChartTerminal(
-                        instrument = instrument,
-                        timeframe = timeframe,
-                        detectedPatterns = allDetectedPatterns,
-                        onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        } else {
-            // 1. Controls Row: Timeframe Pills (M1, M5, M15, M30, H1)
+        // 1. Controls Row: Timeframe Pills (M1, M5, M15, M30, H1) - Common for both modes
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -272,6 +252,26 @@ fun ChartsScreen(
             }
         }
 
+        if (viewMode == ChartViewMode.BROKER_WEB) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, DarkBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(540.dp)
+                ) {
+                    WebChartTerminal(
+                        instrument = instrument,
+                        timeframe = timeframe,
+                        detectedPatterns = allDetectedPatterns,
+                        onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        } else {
         // 1.B Multi-Timeframe Trend Matrix Card
         item {
             Card(
