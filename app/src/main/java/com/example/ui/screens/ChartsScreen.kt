@@ -97,7 +97,7 @@ fun ChartsScreen(
     }
 
     var isFullScreen by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(ChartViewMode.CANVAS_PATTERNS) }
+    var viewMode by remember { mutableStateOf(ChartViewMode.BROKER_WEB) }
     var selectedCandleIndex by remember { mutableStateOf<Int?>(null) }
     var showSpreadInfoDialog by remember { mutableStateOf(false) }
     var showConfluenceInfoDialog by remember { mutableStateOf(false) }
@@ -211,6 +211,8 @@ fun ChartsScreen(
                     WebChartTerminal(
                         instrument = instrument,
                         timeframe = timeframe,
+                        detectedPatterns = allDetectedPatterns,
+                        onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

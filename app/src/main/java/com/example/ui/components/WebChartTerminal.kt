@@ -4,15 +4,20 @@ import android.annotation.SuppressLint
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.CandlestickChart
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.data.model.DetectedPattern
+import com.example.data.model.SignalAction
 import com.example.data.model.Timeframe
 import com.example.data.model.TradingInstrument
 import com.example.ui.theme.*
@@ -41,6 +48,8 @@ enum class ChartFeedSource(val displayName: String, val tvSymbol: String) {
 fun WebChartTerminal(
     instrument: TradingInstrument,
     timeframe: Timeframe,
+    detectedPatterns: List<DetectedPattern> = emptyList(),
+    onApplyPatternToRisk: (DetectedPattern) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.OANDA) }
@@ -111,22 +120,22 @@ fun WebChartTerminal(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Language,
                             contentDescription = null,
                             tint = GoldPrimary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                         Text(
-                            text = "Feed Broker Live:",
+                            text = "Feed Broker:",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -146,7 +155,7 @@ fun WebChartTerminal(
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSel) Color.Black else TextSecondary,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
                                 )
                             }
                         }
@@ -167,7 +176,7 @@ fun WebChartTerminal(
             }
         }
 
-        // Web Chart Container
+        // Web Chart Container with Overlay AI Pattern Scanner
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -195,6 +204,91 @@ fun WebChartTerminal(
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            // Live AI Auto-Scan Pattern Banner Overlay (Bottom Floating Bar)
+            if (detectedPatterns.isNotEmpty()) {
+                val topPattern = detectedPatterns.first()
+                val badgeColor = if (topPattern.action == SignalAction.BUY) BuyGreen else SellRed
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.Black.copy(alpha = 0.85f),
+                    border = BorderStroke(1.dp, GoldPrimary),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(10.dp)
+                        .fillMaxWidth()
+                        .clickable { onApplyPatternToRisk(topPattern) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoGraph,
+                                contentDescription = null,
+                                tint = GoldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "AI Live Scan:",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextSecondary
+                                    )
+                                    Text(
+                                        text = topPattern.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = GoldPrimary
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = badgeColor.copy(alpha = 0.2f)
+                                    ) {
+                                        Text(
+                                            text = topPattern.action.badgeText,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = badgeColor,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "SL: $${instrument.formatPrice(topPattern.suggestedStopLoss)} | TP: $${instrument.formatPrice(topPattern.suggestedTakeProfit)} (R:R ${"%.1f".format(topPattern.estimatedRiskReward)})",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = GoldPrimary
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "Pakai SL/TP", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
