@@ -70,11 +70,8 @@ class LiveMarketService {
     private val fridayCloseXau = 4343.55
     private val fridayCloseEur = 1.14650
 
-    // Primary Interbank endpoint (Yahoo Finance Chart API - Free & Realtime)
-    private val yahooHosts = listOf(
-        "https://query1.finance.yahoo.com",
-        "https://query2.finance.yahoo.com"
-    )
+    // Primary single interbank host (Free, high-speed & realtime)
+    private val primaryHost = "https://query1.finance.yahoo.com"
 
     suspend fun fetchLivePrices(): LiveQuote? = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
@@ -120,10 +117,10 @@ class LiveMarketService {
     }
 
     /**
-     * Pure unmanipulated Spot Gold (XAU/USD) - Direct market feed with ZERO artificial offset.
+     * Pure unmanipulated Spot Gold (XAU/USD) - Direct single market stream.
      */
     private fun fetchPureSpotGold(): Double? {
-        // Primary: Direct Realtime Gold API (api.gold-api.com)
+        // Direct Realtime Gold API (api.gold-api.com)
         try {
             val goldApiUrl = "https://api.gold-api.com/price/XAU"
             val request = Request.Builder()
@@ -149,81 +146,46 @@ class LiveMarketService {
             }
         } catch (_: Exception) {}
 
-        // Secondary: Direct Yahoo Finance Spot Gold XAUUSD=X (Unified Source of Truth)
-        for (host in yahooHosts) {
-            try {
-                val url = "$host/v8/finance/chart/XAUUSD=X?interval=1m&range=1d"
-                val request = Request.Builder()
-                    .url(url)
-                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                    .addHeader("Accept", "application/json, text/plain, */*")
-                    .addHeader("Referer", "https://finance.yahoo.com/")
-                    .build()
+        // Direct Yahoo Finance Spot Gold XAUUSD=X
+        try {
+            val url = "$primaryHost/v8/finance/chart/XAUUSD=X?interval=1m&range=1d"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Accept", "application/json, text/plain, */*")
+                .addHeader("Referer", "https://finance.yahoo.com/")
+                .build()
 
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: return@use
-                        val root = JSONObject(body)
-                        val chart = root.getJSONObject("chart")
-                        val results = chart.getJSONArray("result")
-                        if (results.length() > 0) {
-                            val resultObj = results.getJSONObject(0)
-                            val meta = resultObj.getJSONObject("meta")
-                            var price = meta.optDouble("regularMarketPrice", Double.NaN)
-                            if (price.isNaN()) {
-                                price = meta.optDouble("previousClose", Double.NaN)
-                            }
-                            if (!price.isNaN() && price > 0.0) {
-                                return ((price * 100.0).roundToLong() / 100.0)
-                            }
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@use
+                    val root = JSONObject(body)
+                    val chart = root.getJSONObject("chart")
+                    val results = chart.getJSONArray("result")
+                    if (results.length() > 0) {
+                        val resultObj = results.getJSONObject(0)
+                        val meta = resultObj.getJSONObject("meta")
+                        var price = meta.optDouble("regularMarketPrice", Double.NaN)
+                        if (price.isNaN()) {
+                            price = meta.optDouble("previousClose", Double.NaN)
+                        }
+                        if (!price.isNaN() && price > 0.0) {
+                            return ((price * 100.0).roundToLong() / 100.0)
                         }
                     }
                 }
-            } catch (_: Exception) {}
-        }
+            }
+        } catch (_: Exception) {}
 
         return null
     }
 
     /**
-     * Pure unmanipulated EUR/USD - Direct interbank spot market feed with ZERO artificial offset.
+     * Pure unmanipulated EUR/USD - Direct interbank spot market feed.
      */
     private fun fetchPureEurUsd(): Double? {
-        // Try Yahoo Finance EURUSD=X
-        for (host in yahooHosts) {
-            try {
-                val url = "$host/v8/finance/chart/EURUSD=X?interval=1m&range=1d"
-                val request = Request.Builder()
-                    .url(url)
-                    .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: return@use
-                        val root = JSONObject(body)
-                        val chart = root.getJSONObject("chart")
-                        val results = chart.getJSONArray("result")
-                        if (results.length() > 0) {
-                            val resultObj = results.getJSONObject(0)
-                            val meta = resultObj.getJSONObject("meta")
-                            var price = meta.optDouble("regularMarketPrice", Double.NaN)
-                            if (price.isNaN()) {
-                                price = meta.optDouble("previousClose", Double.NaN)
-                            }
-                            if (!price.isNaN() && price > 0.0) {
-                                // 5 decimal precision matching MetaTrader 5
-                                return ((price * 100000.0).roundToLong() / 100000.0)
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // Secondary fallback: Open Exchange Rates
         try {
-            val url = "https://open.er-api.com/v6/latest/EUR"
+            val url = "$primaryHost/v8/finance/chart/EURUSD=X?interval=1m&range=1d"
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", "Mozilla/5.0 (Android; ScalpSignal)")
@@ -233,10 +195,18 @@ class LiveMarketService {
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return@use
                     val root = JSONObject(body)
-                    val rates = root.optJSONObject("rates")
-                    val usdRate = rates?.optDouble("USD", Double.NaN) ?: Double.NaN
-                    if (!usdRate.isNaN() && usdRate > 0.0) {
-                        return ((usdRate * 100000.0).roundToLong() / 100000.0)
+                    val chart = root.getJSONObject("chart")
+                    val results = chart.getJSONArray("result")
+                    if (results.length() > 0) {
+                        val resultObj = results.getJSONObject(0)
+                        val meta = resultObj.getJSONObject("meta")
+                        var price = meta.optDouble("regularMarketPrice", Double.NaN)
+                        if (price.isNaN()) {
+                            price = meta.optDouble("previousClose", Double.NaN)
+                        }
+                        if (!price.isNaN() && price > 0.0) {
+                            return ((price * 100000.0).roundToLong() / 100000.0)
+                        }
                     }
                 }
             }
@@ -261,83 +231,72 @@ class LiveMarketService {
             Timeframe.H1 -> "5d"
         }
 
-        // Symbols to query on Yahoo Finance Spot Interbank:
-        // For Gold: Pure Spot tickers ONLY (XAUUSD=X, XAU-USD, XAU=X). NEVER use GC=F (COMEX Futures) which has $70-$100+ premium/offset.
-        // For EUR: EURUSD=X
-        val symbolsToTry = if (instrument == TradingInstrument.XAUUSD) {
-            listOf("XAUUSD=X", "XAU-USD", "XAU=X")
-        } else {
-            listOf("EURUSD=X")
-        }
+        val symbol = if (instrument == TradingInstrument.XAUUSD) "XAUUSD=X" else "EURUSD=X"
 
-        for (symbol in symbolsToTry) {
-            for (host in yahooHosts) {
-                try {
-                    val url = "$host/v8/finance/chart/$symbol?interval=$interval&range=$range"
-                    val request = Request.Builder()
-                        .url(url)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                        .addHeader("Accept", "application/json, text/plain, */*")
-                        .addHeader("Referer", "https://finance.yahoo.com/")
-                        .build()
+        try {
+            val url = "$primaryHost/v8/finance/chart/$symbol?interval=$interval&range=$range"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Accept", "application/json, text/plain, */*")
+                .addHeader("Referer", "https://finance.yahoo.com/")
+                .build()
 
-                    client.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful) return@use
-                        val bodyString = response.body?.string() ?: return@use
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use
+                val bodyString = response.body?.string() ?: return@use
 
-                        val root = JSONObject(bodyString)
-                        val chart = root.getJSONObject("chart")
-                        val results = chart.getJSONArray("result")
-                        if (results.length() == 0) return@use
+                val root = JSONObject(bodyString)
+                val chart = root.getJSONObject("chart")
+                val results = chart.getJSONArray("result")
+                if (results.length() == 0) return@use
 
-                        val resultObj = results.getJSONObject(0)
-                        val timestamps = resultObj.optJSONArray("timestamp") ?: return@use
-                        val indicators = resultObj.getJSONObject("indicators")
-                        val quoteArray = indicators.getJSONArray("quote")
-                        if (quoteArray.length() == 0) return@use
+                val resultObj = results.getJSONObject(0)
+                val timestamps = resultObj.optJSONArray("timestamp") ?: return@use
+                val indicators = resultObj.getJSONObject("indicators")
+                val quoteArray = indicators.getJSONArray("quote")
+                if (quoteArray.length() == 0) return@use
 
-                        val quote = quoteArray.getJSONObject(0)
-                        val opens = quote.optJSONArray("open") ?: return@use
-                        val highs = quote.optJSONArray("high") ?: return@use
-                        val lows = quote.optJSONArray("low") ?: return@use
-                        val closes = quote.optJSONArray("close") ?: return@use
-                        val volumes = quote.optJSONArray("volume")
+                val quote = quoteArray.getJSONObject(0)
+                val opens = quote.optJSONArray("open") ?: return@use
+                val highs = quote.optJSONArray("high") ?: return@use
+                val lows = quote.optJSONArray("low") ?: return@use
+                val closes = quote.optJSONArray("close") ?: return@use
+                val volumes = quote.optJSONArray("volume")
 
-                        val candles = mutableListOf<Candle>()
-                        val total = timestamps.length()
-                        val startIdx = (total - 80).coerceAtLeast(0)
-                        val thirtyHoursAgo = System.currentTimeMillis() - (30 * 3600 * 1000L)
+                val candles = mutableListOf<Candle>()
+                val total = timestamps.length()
+                val startIdx = (total - 80).coerceAtLeast(0)
+                val thirtyHoursAgo = System.currentTimeMillis() - (30 * 3600 * 1000L)
 
-                        for (i in startIdx until total) {
-                            if (opens.isNull(i) || closes.isNull(i)) continue
-                            val time = timestamps.getLong(i) * 1000L
-                            if (time < thirtyHoursAgo && total > 30) continue
+                for (i in startIdx until total) {
+                    if (opens.isNull(i) || closes.isNull(i)) continue
+                    val time = timestamps.getLong(i) * 1000L
+                    if (time < thirtyHoursAgo && total > 30) continue
 
-                            val open = opens.optDouble(i, Double.NaN)
-                            val close = closes.optDouble(i, open)
+                    val open = opens.optDouble(i, Double.NaN)
+                    val close = closes.optDouble(i, open)
 
-                            if (open.isNaN() || close.isNaN() || open <= 0.0 || close <= 0.0) continue
+                    if (open.isNaN() || close.isNaN() || open <= 0.0 || close <= 0.0) continue
 
-                            var rawHigh = if (!highs.isNull(i)) highs.optDouble(i, maxOf(open, close)) else maxOf(open, close)
-                            var rawLow = if (!lows.isNull(i)) lows.optDouble(i, minOf(open, close)) else minOf(open, close)
+                    var rawHigh = if (!highs.isNull(i)) highs.optDouble(i, maxOf(open, close)) else maxOf(open, close)
+                    var rawLow = if (!lows.isNull(i)) lows.optDouble(i, minOf(open, close)) else minOf(open, close)
 
-                            if (rawHigh.isNaN() || rawHigh <= 0.0) rawHigh = maxOf(open, close)
-                            if (rawLow.isNaN() || rawLow <= 0.0) rawLow = minOf(open, close)
+                    if (rawHigh.isNaN() || rawHigh <= 0.0) rawHigh = maxOf(open, close)
+                    if (rawLow.isNaN() || rawLow <= 0.0) rawLow = minOf(open, close)
 
-                            val high = maxOf(rawHigh, maxOf(open, close))
-                            val low = minOf(rawLow, minOf(open, close))
-                            val vol = if (volumes != null && !volumes.isNull(i)) volumes.optDouble(i, 100.0) else 100.0
+                    val high = maxOf(rawHigh, maxOf(open, close))
+                    val low = minOf(rawLow, minOf(open, close))
+                    val vol = if (volumes != null && !volumes.isNull(i)) volumes.optDouble(i, 100.0) else 100.0
 
-                            candles.add(Candle(time, open, high, low, close, vol))
-                        }
+                    candles.add(Candle(time, open, high, low, close, vol))
+                }
 
-                        if (candles.isNotEmpty()) {
-                            return@withContext candles
-                        }
-                    }
-                } catch (_: Exception) {}
+                if (candles.isNotEmpty()) {
+                    return@withContext candles
+                }
             }
-        }
+        } catch (_: Exception) {}
 
         return@withContext null
     }

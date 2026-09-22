@@ -45,6 +45,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.*
 import com.example.service.IndicatorCalculator
 import com.example.service.PatternRecognitionEngine
+import com.example.ui.components.TradingViewLightweightChart
 import com.example.ui.components.WebChartTerminal
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
@@ -55,7 +56,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 enum class ChartViewMode(val title: String) {
-    CANVAS_PATTERNS("Sinyal & Auto-Pola"),
+    SOLUSI_B("TradingView Pro (Solusi B)"),
     BROKER_WEB("Broker Web Terminal Live")
 }
 
@@ -97,7 +98,7 @@ fun ChartsScreen(
     }
 
     var isFullScreen by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(ChartViewMode.BROKER_WEB) }
+    var viewMode by remember { mutableStateOf(ChartViewMode.SOLUSI_B) }
     var selectedCandleIndex by remember { mutableStateOf<Int?>(null) }
     var showSpreadInfoDialog by remember { mutableStateOf(false) }
     var showConfluenceInfoDialog by remember { mutableStateOf(false) }
@@ -179,7 +180,7 @@ fun ChartsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (mode == ChartViewMode.CANVAS_PATTERNS) Icons.Default.CandlestickChart else Icons.Default.Language,
+                                    imageVector = if (mode == ChartViewMode.SOLUSI_B) Icons.Default.CandlestickChart else Icons.Default.Language,
                                     contentDescription = null,
                                     tint = if (isSel) Color.Black else TextSecondary,
                                     modifier = Modifier.size(16.dp)
@@ -488,34 +489,32 @@ fun ChartsScreen(
             }
         }
 
-        // 4. Custom Candlestick Canvas with Auto-Draw Patterns & Fullscreen toggle
+        // 4. TradingView Lightweight Chart (Solusi B) with Auto-Draw Patterns & Indicators
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(310.dp)
+                    .height(480.dp)
                     .border(1.dp, DarkBorder, RoundedCornerShape(16.dp))
             ) {
-                Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                Box(modifier = Modifier.fillMaxSize()) {
                     if (candles.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
                     } else {
-                        CandlestickChart(
+                        TradingViewLightweightChart(
                             candles = candles,
                             instrument = instrument,
                             timeframe = timeframe,
-                            activeSignal = activeSignal,
                             detectedPatterns = allDetectedPatterns,
-                            showEma = showEma,
-                            showBollinger = showBollinger,
-                            showLevels = showLevels,
                             showPatterns = showPatterns,
-                            selectedCandleIndex = selectedCandleIndex,
-                            onCandleSelected = { idx -> selectedCandleIndex = idx }
+                            showEma = showEma,
+                            showVolume = true,
+                            onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 
@@ -526,7 +525,7 @@ fun ChartsScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 4.dp, end = 68.dp)
+                            .padding(top = 8.dp, end = 52.dp)
                             .clickable { isFullScreen = true }
                             .testTag("enter_fullscreen_button")
                     ) {
@@ -1162,20 +1161,17 @@ fun ChartsScreen(
                             .fillMaxWidth()
                             .weight(1f)
                             .border(1.dp, DarkBorder, RoundedCornerShape(8.dp))
-                            .padding(4.dp)
                     ) {
-                        CandlestickChart(
+                        TradingViewLightweightChart(
                             candles = candles,
                             instrument = instrument,
                             timeframe = timeframe,
-                            activeSignal = activeSignal,
                             detectedPatterns = allDetectedPatterns,
-                            showEma = showEma,
-                            showBollinger = showBollinger,
-                            showLevels = showLevels,
                             showPatterns = showPatterns,
-                            selectedCandleIndex = selectedCandleIndex,
-                            onCandleSelected = { idx -> selectedCandleIndex = idx }
+                            showEma = showEma,
+                            showVolume = true,
+                            onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }

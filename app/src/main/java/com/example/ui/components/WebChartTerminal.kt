@@ -54,6 +54,7 @@ fun WebChartTerminal(
 ) {
     var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.OANDA) }
     var keyReload by remember { mutableIntStateOf(0) }
+    var lastLoadedContent by remember { mutableStateOf("") }
 
     val rawSymbol = if (instrument == TradingInstrument.XAUUSD) {
         selectedFeedSource.tvSymbol
@@ -195,12 +196,17 @@ fun WebChartTerminal(
                         settings.allowFileAccess = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
+                        setBackgroundColor(android.graphics.Color.parseColor("#12151e"))
                         webViewClient = WebViewClient()
+                        lastLoadedContent = htmlContent
                         loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
                     }
                 },
                 update = { webView ->
-                    webView.loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
+                    if (lastLoadedContent != htmlContent) {
+                        lastLoadedContent = htmlContent
+                        webView.loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
