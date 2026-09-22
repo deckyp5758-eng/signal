@@ -65,9 +65,9 @@ class LiveMarketService {
         .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
-    // Authentic official Friday interbank close reference (matching MetaTrader 5 Web quotes)
-    private val fridayCloseXau = 4379.00
-    private val fridayCloseEur = 1.14834
+    // Authentic official interbank reference (matching Yahoo Finance XAUUSD=X quotes)
+    private val fridayCloseXau = 4343.55
+    private val fridayCloseEur = 1.14650
 
     // Primary Interbank endpoint (Yahoo Finance Chart API - Free & Realtime)
     private val yahooHosts = listOf(
