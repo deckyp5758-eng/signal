@@ -237,58 +237,64 @@ class ScalpingSignalEngine(
             val currentXau = _xauPrice.value
             val currentEur = _eurPrice.value
 
+            // 1. Instant Priority Fetch for Core Scalping Timeframe (M5) -> 2 lightweight requests only!
             coroutineScope {
-                for (tf in Timeframe.values()) {
-                    launch(Dispatchers.IO) {
-                        val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
-                        val xauKey = Pair(TradingInstrument.XAUUSD, tf)
-                        if (!xauCandles.isNullOrEmpty()) {
-                            val mutableXau = xauCandles.toMutableList()
-                            if (currentXau > 0.0) {
-                                val lastIdx = mutableXau.lastIndex
-                                val last = mutableXau[lastIdx]
-                                mutableXau[lastIdx] = last.copy(
-                                    close = currentXau,
-                                    high = maxOf(last.high, currentXau),
-                                    low = minOf(last.low, currentXau)
-                                )
-                            }
-                            candleMap[xauKey] = mutableXau
-                        } else {
-                            val existing = candleMap[xauKey]
-                            if (!existing.isNullOrEmpty() && currentXau > 0.0) {
-                                updateLastCandle(TradingInstrument.XAUUSD, currentXau)
-                            }
+                launch(Dispatchers.IO) {
+                    val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, Timeframe.M5, currentXau)
+                    val xauKey = Pair(TradingInstrument.XAUUSD, Timeframe.M5)
+                    if (!xauCandles.isNullOrEmpty()) {
+                        val mutableXau = xauCandles.toMutableList()
+                        if (currentXau > 0.0) {
+                            val lastIdx = mutableXau.lastIndex
+                            val last = mutableXau[lastIdx]
+                            mutableXau[lastIdx] = last.copy(
+                                close = currentXau,
+                                high = maxOf(last.high, currentXau),
+                                low = minOf(last.low, currentXau)
+                            )
                         }
+                        candleMap[xauKey] = mutableXau
                     }
+                }
 
-                    launch(Dispatchers.IO) {
-                        val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
-                        val eurKey = Pair(TradingInstrument.EURUSD, tf)
-                        if (!eurCandles.isNullOrEmpty()) {
-                            val mutableEur = eurCandles.toMutableList()
-                            if (currentEur > 0.0) {
-                                val lastIdx = mutableEur.lastIndex
-                                val last = mutableEur[lastIdx]
-                                mutableEur[lastIdx] = last.copy(
-                                    close = currentEur,
-                                    high = maxOf(last.high, currentEur),
-                                    low = minOf(last.low, currentEur)
-                                )
-                            }
-                            candleMap[eurKey] = mutableEur
-                        } else {
-                            val existing = candleMap[eurKey]
-                            if (!existing.isNullOrEmpty() && currentEur > 0.0) {
-                                updateLastCandle(TradingInstrument.EURUSD, currentEur)
-                            }
+                launch(Dispatchers.IO) {
+                    val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, Timeframe.M5, currentEur)
+                    val eurKey = Pair(TradingInstrument.EURUSD, Timeframe.M5)
+                    if (!eurCandles.isNullOrEmpty()) {
+                        val mutableEur = eurCandles.toMutableList()
+                        if (currentEur > 0.0) {
+                            val lastIdx = mutableEur.lastIndex
+                            val last = mutableEur[lastIdx]
+                            mutableEur[lastIdx] = last.copy(
+                                close = currentEur,
+                                high = maxOf(last.high, currentEur),
+                                low = minOf(last.low, currentEur)
+                            )
                         }
+                        candleMap[eurKey] = mutableEur
                     }
                 }
             }
+
+            // Immediately post indicators and signals for M5 so chart and signals display instantly (<100ms)
             withContext(Dispatchers.Main) {
                 updateIndicatorsForBoth()
                 evaluateAutoSignals(forceNew = false)
+            }
+
+            // 2. Lazy Background Fetch for remaining timeframes (M1, M15, M30, H1) without blocking UI
+            val otherTimeframes = Timeframe.values().filter { it != Timeframe.M5 }
+            for (tf in otherTimeframes) {
+                scope.launch(Dispatchers.IO) {
+                    val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
+                    if (!xauCandles.isNullOrEmpty()) {
+                        candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toMutableList()
+                    }
+                    val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
+                    if (!eurCandles.isNullOrEmpty()) {
+                        candleMap[Pair(TradingInstrument.EURUSD, tf)] = eurCandles.toMutableList()
+                    }
+                }
             }
         } catch (e: Exception) {
             // Keep existing candle map
