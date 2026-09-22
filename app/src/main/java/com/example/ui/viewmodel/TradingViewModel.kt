@@ -23,6 +23,7 @@ enum class AppTab(val title: String) {
     CHARTS("Grafik"),
     CALENDAR("Kalender"),
     RISK_MANAGER("Risiko & SL/TP"),
+    DIAGNOSTICS("Diagnostik"),
     TUTORIAL("Panduan Pemula")
 }
 

@@ -1,5 +1,6 @@
 package com.example.service
 
+import com.example.config.AppConfig
 import com.example.data.model.Candle
 import com.example.data.model.Timeframe
 import com.example.data.model.TradingInstrument
@@ -122,7 +123,33 @@ class LiveMarketService {
      * Pure unmanipulated Spot Gold (XAU/USD) - Direct market feed with ZERO artificial offset.
      */
     private fun fetchPureSpotGold(): Double? {
-        // Direct Yahoo Finance Spot Gold XAUUSD=X (Unified Source of Truth)
+        // Primary: Direct Realtime Gold API (api.gold-api.com)
+        try {
+            val goldApiUrl = "https://api.gold-api.com/price/XAU"
+            val request = Request.Builder()
+                .url(goldApiUrl)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    if (body.isNotEmpty() && body.startsWith("{")) {
+                        val json = JSONObject(body)
+                        var price = json.optDouble("price", Double.NaN)
+                        if (price.isNaN()) {
+                            price = json.optDouble("ask", Double.NaN)
+                        }
+                        if (!price.isNaN() && price > 1000.0) {
+                            return ((price * 100.0).roundToLong() / 100.0)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Secondary: Direct Yahoo Finance Spot Gold XAUUSD=X (Unified Source of Truth)
         for (host in yahooHosts) {
             try {
                 val url = "$host/v8/finance/chart/XAUUSD=X?interval=1m&range=1d"

@@ -34,6 +34,7 @@ import com.example.ui.components.InAppSignalBanner
 import com.example.ui.components.InstrumentSelector
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.ChartsScreen
+import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.RiskManagerScreen
 import com.example.ui.screens.SignalsScreen
 import com.example.ui.screens.TutorialScreen
@@ -259,6 +260,25 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     modifier = Modifier.testTag("tab_risk")
                 )
 
+                // Tab Diagnostik
+                NavigationBarItem(
+                    selected = currentTab == AppTab.DIAGNOSTICS,
+                    onClick = { viewModel.selectTab(AppTab.DIAGNOSTICS) },
+                    icon = {
+                        Icon(
+                            imageVector = if (currentTab == AppTab.DIAGNOSTICS) Icons.Default.Terminal else Icons.Outlined.Terminal,
+                            contentDescription = "Diagnostik Sistem"
+                        )
+                    },
+                    label = { Text("Diagnostik", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = GoldPrimary,
+                        selectedTextColor = GoldPrimary,
+                        indicatorColor = GoldPrimary.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.testTag("tab_diagnostics")
+                )
+
                 // Tab Tutorial
                 NavigationBarItem(
                     selected = currentTab == AppTab.TUTORIAL,
@@ -367,6 +387,9 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         onDeleteTradePlan = { viewModel.deleteTradePlan(it) },
                         onCopyText = { text, label -> viewModel.copyToClipboard(text, label) }
                     )
+                }
+                AppTab.DIAGNOSTICS -> {
+                    DiagnosticsScreen(viewModel = viewModel)
                 }
                 AppTab.TUTORIAL -> {
                     TutorialScreen(

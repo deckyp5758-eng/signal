@@ -1,0 +1,200 @@
+package com.example.ui.components
+
+import android.annotation.SuppressLint
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CandlestickChart
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.data.model.Timeframe
+import com.example.data.model.TradingInstrument
+import com.example.ui.theme.*
+
+enum class ChartFeedSource(val displayName: String, val tvSymbol: String) {
+    OANDA("OANDA (Interbank MetaTrader Feed)", "OANDA:XAUUSD"),
+    FOREX_COM("FOREX.com (ECN Broker Feed)", "FOREXCOM:XAUUSD"),
+    CAPITAL_COM("Capital.com (Broker Gold Spot)", "CAPITALCOM:XAUUSD"),
+    TVC("TradingView Spot Gold", "TVC:GOLD")
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun WebChartTerminal(
+    instrument: TradingInstrument,
+    timeframe: Timeframe,
+    modifier: Modifier = Modifier
+) {
+    var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.OANDA) }
+    var keyReload by remember { mutableIntStateOf(0) }
+
+    val rawSymbol = if (instrument == TradingInstrument.XAUUSD) {
+        selectedFeedSource.tvSymbol
+    } else {
+        "FX:EURUSD"
+    }
+
+    val intervalStr = when (timeframe) {
+        Timeframe.M1 -> "1"
+        Timeframe.M5 -> "5"
+        Timeframe.M15 -> "15"
+        Timeframe.M30 -> "30"
+        Timeframe.H1 -> "60"
+    }
+
+    val htmlContent = remember(rawSymbol, intervalStr, keyReload) {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #12151e; overflow: hidden; }
+                #tradingview_widget { width: 100%; height: 100%; }
+            </style>
+        </head>
+        <body>
+            <div id="tradingview_widget"></div>
+            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+            <script type="text/javascript">
+                new TradingView.widget({
+                    "autosize": true,
+                    "symbol": "$rawSymbol",
+                    "interval": "$intervalStr",
+                    "timezone": "Etc/UTC",
+                    "theme": "dark",
+                    "style": "1",
+                    "locale": "id",
+                    "toolbar_bg": "#12151e",
+                    "enable_publishing": false,
+                    "allow_symbol_change": true,
+                    "hide_top_toolbar": false,
+                    "hide_legend": false,
+                    "save_image": false,
+                    "container_id": "tradingview_widget"
+                });
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(DarkBackground)
+    ) {
+        // Feed Source Bar
+        if (instrument == TradingInstrument.XAUUSD) {
+            Surface(
+                color = DarkSurface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = GoldPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Feed Broker Live:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ChartFeedSource.values().forEach { source ->
+                            val isSel = selectedFeedSource == source
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSel) GoldPrimary else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.clickable { selectedFeedSource = source }
+                            ) {
+                                Text(
+                                    text = source.name,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) Color.Black else TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { keyReload++ },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Muat Ulang Grafik",
+                                tint = CyanEma,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Web Chart Container
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .testTag("web_chart_terminal")
+        ) {
+            AndroidView(
+                factory = { context ->
+                    WebView(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = true
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        webViewClient = WebViewClient()
+                        loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { webView ->
+                    webView.loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}

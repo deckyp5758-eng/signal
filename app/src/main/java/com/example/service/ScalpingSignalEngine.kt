@@ -49,6 +49,13 @@ class ScalpingSignalEngine(
     private val _eurPrice = MutableStateFlow(1.14834)
     val eurPrice: StateFlow<Double> = _eurPrice.asStateFlow()
 
+    private val _brokerOffsetXau = MutableStateFlow(0.0)
+    val brokerOffsetXau: StateFlow<Double> = _brokerOffsetXau.asStateFlow()
+
+    fun setBrokerOffsetXau(offset: Double) {
+        _brokerOffsetXau.value = offset
+    }
+
     // Price change percentage
     private val _xauChangePct = MutableStateFlow(0.84)
     val xauChangePct: StateFlow<Double> = _xauChangePct.asStateFlow()
@@ -88,9 +95,7 @@ class ScalpingSignalEngine(
     private var job: Job? = null
 
     init {
-        // Clear any old dummy/synthetic signals from Room to avoid overlap with real-time data
         scope.launch(Dispatchers.IO) {
-            signalDao.clearAllSignals()
             syncLiveCandles()
             try {
                 val quote = liveMarketService.fetchLivePrices()
@@ -530,8 +535,9 @@ class ScalpingSignalEngine(
         }
         val riskAmountUsd = riskAmountCurrency * currencyToUsdMultiplier
 
-        // Pip distance
-        val slPips = customSlPips ?: if (instrument == TradingInstrument.XAUUSD) 20.0 else 15.0
+        // Pip distance (If XAUUSD and user input < 5.0, e.g. 2.0 = $2.00 Gold distance, convert to 20 pips so lot size matches MT5)
+        val rawSlPips = customSlPips ?: if (instrument == TradingInstrument.XAUUSD) 20.0 else 15.0
+        val slPips = if (instrument == TradingInstrument.XAUUSD && rawSlPips < 5.0) rawSlPips * 10.0 else rawSlPips
         val slPriceOffset = slPips * instrument.pipMultiplier
 
         val stopLossPrice: Double

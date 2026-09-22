@@ -411,7 +411,17 @@ fun RiskManagerScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Jarak SL (Pips)", fontSize = 12.sp, color = TextSecondary)
+                            val slVal = riskInput.slPipsText.toDoubleOrNull() ?: 20.0
+                            val dollarEq = if (selectedInstrument == TradingInstrument.XAUUSD) {
+                                if (slVal < 5.0) slVal else slVal * 0.10
+                            } else slVal * 0.0001
+
+                            Text(
+                                text = if (selectedInstrument == TradingInstrument.XAUUSD) "Jarak SL: ${"%.2f".format(dollarEq)} Dolar Emas" else "Jarak SL (Pips)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary
+                            )
                             Spacer(modifier = Modifier.height(4.dp))
                             OutlinedTextField(
                                 value = riskInput.slPipsText,
@@ -420,6 +430,11 @@ fun RiskManagerScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = if (selectedInstrument == TradingInstrument.XAUUSD) "Saran: 2.00 ($2.00 SL = 20 Pips)" else "Saran: 15 Pips",
+                                fontSize = 9.sp,
+                                color = GoldPrimary
                             )
                         }
 
@@ -604,6 +619,17 @@ fun AutoCalculatedResultCard(
                             fontSize = 26.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary
+                        )
+                        val equivalentNote = when (calc.accountType) {
+                            AccountType.CENT -> "Setara dengan ${"%.2f".format(calc.lotSize * 0.01)} Lot di MT4/MT5 Akun Standar"
+                            AccountType.STANDARD -> "Setara dengan ${"%.2f".format(calc.lotSize * 100.0)} Lot di MT4/MT5 Akun Cent"
+                            AccountType.MINI -> "Setara dengan ${"%.2f".format(calc.lotSize * 0.1)} Lot di MT4/MT5 Akun Standar"
+                        }
+                        Text(
+                            text = equivalentNote,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GoldPrimary
                         )
                     }
 

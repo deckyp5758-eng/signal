@@ -45,6 +45,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.*
 import com.example.service.IndicatorCalculator
 import com.example.service.PatternRecognitionEngine
+import com.example.ui.components.WebChartTerminal
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -52,6 +53,11 @@ import java.util.*
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+
+enum class ChartViewMode(val title: String) {
+    CANVAS_PATTERNS("Sinyal & Auto-Pola"),
+    BROKER_WEB("Broker Web Terminal Live")
+}
 
 @Composable
 fun ChartsScreen(
@@ -91,6 +97,7 @@ fun ChartsScreen(
     }
 
     var isFullScreen by remember { mutableStateOf(false) }
+    var viewMode by remember { mutableStateOf(ChartViewMode.CANVAS_PATTERNS) }
     var selectedCandleIndex by remember { mutableStateOf<Int?>(null) }
     var showSpreadInfoDialog by remember { mutableStateOf(false) }
     var showConfluenceInfoDialog by remember { mutableStateOf(false) }
@@ -146,7 +153,70 @@ fun ChartsScreen(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Controls Row: Timeframe Pills (M1, M5, M15, M30, H1)
+        // 0. Mode Switcher: Auto-Pattern Canvas vs Broker Web Terminal Live
+        item {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("chart_mode_switcher")
+            ) {
+                Row(
+                    modifier = Modifier.padding(4.dp).fillMaxWidth()
+                ) {
+                    ChartViewMode.values().forEach { mode ->
+                        val isSel = viewMode == mode
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSel) GoldPrimary else Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewMode = mode }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (mode == ChartViewMode.CANVAS_PATTERNS) Icons.Default.CandlestickChart else Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = if (isSel) Color.Black else TextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = mode.title,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (viewMode == ChartViewMode.BROKER_WEB) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, DarkBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(480.dp)
+                ) {
+                    WebChartTerminal(
+                        instrument = instrument,
+                        timeframe = timeframe,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        } else {
+            // 1. Controls Row: Timeframe Pills (M1, M5, M15, M30, H1)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -760,6 +830,7 @@ fun ChartsScreen(
 
         item {
             Spacer(modifier = Modifier.height(16.dp))
+        }
         }
     }
 

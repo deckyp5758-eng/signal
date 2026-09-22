@@ -154,6 +154,11 @@ fun SignalsScreen(
             }
         }
 
+        // Beginner Quick-Start Playbook Banner
+        item {
+            BeginnerQuickGuideCard()
+        }
+
         // Hero Active Signal Card
         item {
             ActiveSignalHeroCard(
@@ -1005,6 +1010,144 @@ fun SignalHistoryItem(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BeginnerQuickGuideCard() {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth().testTag("beginner_quick_guide_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        tint = GoldPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "💡 3 Langkah Eksekusi Sinyal untuk Pemula",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (isExpanded) "Ketuk untuk menyembunyikan panduan" else "Ketuk untuk membuka panduan langkah demi langkah",
+                            fontSize = 10.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = GoldPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Divider(color = GoldPrimary.copy(alpha = 0.2f), thickness = 0.8.dp)
+
+                    // Step 1
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BuyGreen.copy(alpha = 0.2f),
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "1", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                            }
+                        }
+                        Column {
+                            Text(text = "Lihat Arah Sinyal & Skor Akurasi", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                text = "Perhatikan status BUY (Beli) / SELL (Jual) dan pilih sinyal dengan Skor Akurasi > 80% (Grade A+ / A) untuk peluang tertinggi.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    // Step 2
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = CyanEma.copy(alpha = 0.2f),
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "2", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyanEma)
+                            }
+                        }
+                        Column {
+                            Text(text = "Salin SL & TP ke MetaTrader 4/5", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                text = "Ketuk tombol 'Salin' pada Stop Loss (Garis Merah) dan Take Profit (Garis Hijau) untuk dipaste langsung ke kolom order broker Anda.",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    // Step 3
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = GoldPrimary.copy(alpha = 0.2f),
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "3", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldPrimary)
+                            }
+                        }
+                        Column {
+                            Text(text = "Hitung Lot Aman di Kalkulator Risiko", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                text = "Ketuk tombol 'Hitung Lot' agar sistem secara otomatis menghitung lot aman sesuai modal Anda (Maksimal risiko 1% - 2%).",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
                 }
             }
         }
