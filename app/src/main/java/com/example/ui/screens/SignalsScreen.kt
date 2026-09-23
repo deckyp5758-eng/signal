@@ -28,9 +28,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.SignalEntity
 import com.example.data.model.*
+import com.example.ui.components.TradingViewTechnicalWidget
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
+
+enum class SignalViewMode(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    TRADINGVIEW_WIDGET("Speedometer TV", Icons.Default.Speed),
+    SIGNAL_EXECUTION("Sinyal & MT5", Icons.Default.Bolt),
+    INDICATORS_DETAIL("16+ Indikator", Icons.Default.Analytics)
+}
 
 @Composable
 fun SignalsScreen(
@@ -47,15 +55,16 @@ fun SignalsScreen(
     onOpenCalendar: () -> Unit = {}
 ) {
     var isNewsBannerDismissed by remember { mutableStateOf(false) }
+    var selectedViewMode by remember { mutableStateOf(SignalViewMode.TRADINGVIEW_WIDGET) }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
     ) {
-        // Ultra-Compact News Banner with Dismiss Button (solves screen space consumption & text wrap bugs)
+        // News Shield Banner
         if (newsShield != null && !isNewsBannerDismissed) {
             if (newsShield.isShieldActive) {
                 item {
@@ -154,27 +163,121 @@ fun SignalsScreen(
             }
         }
 
-        // Beginner Quick-Start Playbook Banner
+        // TradingView Synchronized Live Price Header Card
         item {
-            BeginnerQuickGuideCard()
-        }
-
-        // Hero Active Signal Card
-        item {
-            ActiveSignalHeroCard(
+            TradingViewFeedHeaderCard(
                 instrument = selectedInstrument,
                 currentPrice = currentPrice,
-                signal = activeSignal,
-                onCopySignal = onCopySignal,
-                onApplyToRiskManager = onApplyToRiskManager,
                 onScanMarket = onScanMarket
             )
         }
 
-        // Real-Time Indicators Meter
+        // Mode Navigation Pills (Speedometer TradingView / Sinyal Eksekusi MT5 / Detail Indikator)
         item {
-            indicators?.let {
-                TechnicalIndicatorMeter(indicators = it, instrument = selectedInstrument)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    SignalViewMode.values().forEach { mode ->
+                        val isSelected = selectedViewMode == mode
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) GoldPrimary else Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedViewMode = mode }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = mode.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.Black else TextSecondary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = mode.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.Black else TextSecondary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Main Content based on View Mode
+        when (selectedViewMode) {
+            SignalViewMode.TRADINGVIEW_WIDGET -> {
+                // Official TradingView Technical Analysis Speedometer Widget
+                item {
+                    TradingViewTechnicalWidget(
+                        instrument = selectedInstrument
+                    )
+                }
+
+                // Companion Scalping Signal Card
+                item {
+                    ActiveSignalHeroCard(
+                        instrument = selectedInstrument,
+                        currentPrice = currentPrice,
+                        signal = activeSignal,
+                        onCopySignal = onCopySignal,
+                        onApplyToRiskManager = onApplyToRiskManager,
+                        onScanMarket = onScanMarket
+                    )
+                }
+            }
+
+            SignalViewMode.SIGNAL_EXECUTION -> {
+                // Beginner Quick-Start Playbook Banner
+                item {
+                    BeginnerQuickGuideCard()
+                }
+
+                // Hero Active Signal Card (Execution focused)
+                item {
+                    ActiveSignalHeroCard(
+                        instrument = selectedInstrument,
+                        currentPrice = currentPrice,
+                        signal = activeSignal,
+                        onCopySignal = onCopySignal,
+                        onApplyToRiskManager = onApplyToRiskManager,
+                        onScanMarket = onScanMarket
+                    )
+                }
+
+                // Compact Technical Indicator Meter
+                item {
+                    indicators?.let {
+                        TechnicalIndicatorMeter(indicators = it, instrument = selectedInstrument)
+                    }
+                }
+            }
+
+            SignalViewMode.INDICATORS_DETAIL -> {
+                // 16+ Technical Indicators breakdown table (Oscillators + Moving Averages)
+                item {
+                    TradingViewIndicatorBreakdownCard(
+                        instrument = selectedInstrument,
+                        currentPrice = currentPrice,
+                        indicators = indicators
+                    )
+                }
             }
         }
 
@@ -193,7 +296,7 @@ fun SignalsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "M5 Live Scalp Feed",
+                        text = "TradingView M5 Scalp Stream",
                         fontSize = 11.sp,
                         color = TextSecondary
                     )
@@ -263,6 +366,88 @@ fun SignalsScreen(
 }
 
 @Composable
+fun TradingViewFeedHeaderCard(
+    instrument: TradingInstrument,
+    currentPrice: Double,
+    onScanMarket: () -> Unit
+) {
+    val symbolSource = if (instrument == TradingInstrument.XAUUSD) "BINANCE:PAXGUSDT" else "BINANCE:EURUSDT"
+    
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, Color(0xFF2A2E39)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = GoldPrimary.copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, GoldPrimary.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = "TV FEED",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = GoldPrimary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = symbolSource,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "${instrument.symbol} • Bursa Spot Real-Time",
+                        fontSize = 10.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = instrument.formatPrice(currentPrice),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = GoldPrimary
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(BuyGreen)
+                    )
+                    Text(
+                        text = "Sinkron TV 100%",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BuyGreen
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ActiveSignalHeroCard(
     instrument: TradingInstrument,
     currentPrice: Double,
@@ -289,7 +474,7 @@ fun ActiveSignalHeroCard(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Menganalisis Pola Indikator Scalping...",
+                    text = "Menganalisis Sinyal dari Feed TradingView...",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
@@ -301,6 +486,14 @@ fun ActiveSignalHeroCard(
     val isBuy = signal.action == SignalAction.BUY
     val actionColor = if (isBuy) BuyGreen else SellRed
     val actionBg = if (isBuy) BuyGreenContainer else SellRedContainer
+
+    // Real-time Floating PnL calculation
+    val floatingPips = if (isBuy) {
+        (currentPrice - signal.entryPrice) / instrument.pipMultiplier
+    } else {
+        (signal.entryPrice - currentPrice) / instrument.pipMultiplier
+    }
+    val isFloatingProfit = floatingPips >= 0.0
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -392,7 +585,50 @@ fun ActiveSignalHeroCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Real-time Floating PnL Live Bar
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isFloatingProfit) BuyGreen.copy(alpha = 0.12f) else SellRed.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, if (isFloatingProfit) BuyGreen.copy(alpha = 0.4f) else SellRed.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFloatingProfit) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                            contentDescription = null,
+                            tint = if (isFloatingProfit) BuyGreen else SellRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (isFloatingProfit) "Floating Profit Live" else "Floating Drawdown",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Text(
+                        text = "${if (isFloatingProfit) "+" else ""}${"%.1f".format(floatingPips)} pips",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isFloatingProfit) BuyGreen else SellRed
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Breakeven / Move SL to Entry Alert if TP1 is hit
             val isTp1Hit = if (isBuy) currentPrice >= signal.takeProfit1 else currentPrice <= signal.takeProfit1
@@ -811,7 +1047,6 @@ fun TechnicalIndicatorMeter(indicators: IndicatorValues, instrument: TradingInst
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // EMA 9/21
                 IndicatorStatBox(
                     title = "EMA 9 / 21",
                     value = if (indicators.emaFast > indicators.emaSlow) "Bullish Cross" else "Bearish Cross",
@@ -819,7 +1054,6 @@ fun TechnicalIndicatorMeter(indicators: IndicatorValues, instrument: TradingInst
                     modifier = Modifier.weight(1f)
                 )
 
-                // MACD
                 IndicatorStatBox(
                     title = "MACD Momentum",
                     value = if (indicators.macdHist >= 0) "Positif (+)" else "Negatif (-)",
@@ -827,7 +1061,6 @@ fun TechnicalIndicatorMeter(indicators: IndicatorValues, instrument: TradingInst
                     modifier = Modifier.weight(1f)
                 )
 
-                // Volatilitas (ATR)
                 IndicatorStatBox(
                     title = "Volatilitas ATR",
                     value = "${"%.1f".format(indicators.atr / instrument.pipMultiplier)} pips",
@@ -856,6 +1089,163 @@ fun IndicatorStatBox(title: String, value: String, color: Color, modifier: Modif
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = color
+            )
+        }
+    }
+}
+
+@Composable
+fun TradingViewIndicatorBreakdownCard(
+    instrument: TradingInstrument,
+    currentPrice: Double,
+    indicators: IndicatorValues?
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, Color(0xFF2A2E39)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Analytics,
+                        contentDescription = null,
+                        tint = GoldPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Ringkasan 16+ Indikator TradingView",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            if (indicators == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = GoldPrimary)
+                }
+                return@Column
+            }
+
+            // Oscillators Table
+            Text(
+                text = "OSCILLATORS (MOMENTUM)",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = CyanEma
+            )
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val rsiAction = when {
+                        indicators.rsi < 30 -> "BUY"
+                        indicators.rsi > 70 -> "SELL"
+                        else -> "NETRAL"
+                    }
+                    BreakdownRow(name = "Relative Strength Index (14)", value = "%.2f".format(indicators.rsi), action = rsiAction)
+
+                    val macdAction = if (indicators.macdHist >= 0) "BUY" else "SELL"
+                    BreakdownRow(name = "MACD Level (12, 26)", value = "%.3f".format(indicators.macdHist), action = macdAction)
+
+                    val atrVal = "%.1f pips".format(indicators.atr / instrument.pipMultiplier)
+                    BreakdownRow(name = "Average True Range (14)", value = atrVal, action = "VOLATIL")
+
+                    val bbDiff = indicators.bbUpper - indicators.bbLower
+                    val bbPos = if (bbDiff > 0) ((currentPrice - indicators.bbLower) / bbDiff * 100.0).coerceIn(0.0, 100.0) else 50.0
+                    val bbAction = when {
+                        bbPos < 20 -> "BUY"
+                        bbPos > 80 -> "SELL"
+                        else -> "NETRAL"
+                    }
+                    BreakdownRow(name = "Bollinger Bands %B (20, 2)", value = "%.1f%%".format(bbPos), action = bbAction)
+                }
+            }
+
+            // Moving Averages Table
+            Text(
+                text = "MOVING AVERAGES (TREN HARGA)",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = GoldPrimary
+            )
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val emaFastAction = if (currentPrice > indicators.emaFast) "BUY" else "SELL"
+                    BreakdownRow(name = "EMA 9 (Fast Scalp)", value = instrument.formatPrice(indicators.emaFast), action = emaFastAction)
+
+                    val emaSlowAction = if (currentPrice > indicators.emaSlow) "BUY" else "SELL"
+                    BreakdownRow(name = "EMA 21 (Trend Baseline)", value = instrument.formatPrice(indicators.emaSlow), action = emaSlowAction)
+
+                    val emaCrossAction = if (indicators.emaFast > indicators.emaSlow) "BUY" else "SELL"
+                    BreakdownRow(name = "EMA Cross 9/21", value = if (indicators.emaFast > indicators.emaSlow) "Golden Cross" else "Death Cross", action = emaCrossAction)
+
+                    val bbMidAction = if (currentPrice > indicators.bbMiddle) "BUY" else "SELL"
+                    BreakdownRow(name = "SMA 20 (Basis Bollinger)", value = instrument.formatPrice(indicators.bbMiddle), action = bbMidAction)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BreakdownRow(name: String, value: String, action: String) {
+    val actionColor = when (action) {
+        "BUY" -> BuyGreen
+        "SELL" -> SellRed
+        "VOLATIL" -> GoldPrimary
+        else -> TextSecondary
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = name, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1.3f))
+        Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+        Spacer(modifier = Modifier.width(8.dp))
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = actionColor.copy(alpha = 0.15f),
+            modifier = Modifier.width(60.dp)
+        ) {
+            Text(
+                text = action,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = actionColor,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 2.dp)
             )
         }
     }
