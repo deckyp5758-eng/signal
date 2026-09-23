@@ -114,6 +114,7 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val githubRepoOwner by viewModel.githubRepoOwner.collectAsStateWithLifecycle()
     val githubRepoName by viewModel.githubRepoName.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
     val xauPrice by viewModel.engine.xauPrice.collectAsStateWithLifecycle()
     val eurPrice by viewModel.engine.eurPrice.collectAsStateWithLifecycle()
@@ -135,10 +136,11 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val currentPrice = if (selectedInstrument == TradingInstrument.XAUUSD) xauPrice else eurPrice
     val activeSignal = activeSignalsMap[selectedInstrument]
     val currentIndicators = indicatorsMap[selectedInstrument]
-    val chartCandles = remember(selectedInstrument, selectedTimeframe, xauPrice, eurPrice) {
+    val candlesVersion by viewModel.engine.candlesVersion.collectAsStateWithLifecycle()
+    val chartCandles = remember(selectedInstrument, selectedTimeframe, candlesVersion, xauPrice, eurPrice) {
         viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
     }
-    val htfCandles = remember(selectedInstrument, xauPrice, eurPrice) {
+    val htfCandles = remember(selectedInstrument, candlesVersion, xauPrice, eurPrice) {
         viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
     }
     val multiTimeframeTrends = remember(selectedInstrument, xauPrice, eurPrice) {
@@ -367,6 +369,7 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         },
                         isLiveOnline = isLiveFeedOnline,
                         latencyMs = latencyMs,
+                        isScanning = isScanning,
                         onRefreshScan = { viewModel.refreshChartAndScan() }
                     )
                 }

@@ -1,7 +1,10 @@
 package com.example.ui.components
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.view.ViewGroup
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
@@ -37,6 +40,7 @@ import com.example.data.model.TradingInstrument
 import com.example.ui.theme.*
 
 enum class ChartFeedSource(val displayName: String, val tvSymbol: String) {
+    BINANCE("Binance Institutional (Cocok 100% dgn Analisis)", "BINANCE:PAXGUSDT"),
     OANDA("OANDA (Interbank MetaTrader Feed)", "OANDA:XAUUSD"),
     FOREX_COM("FOREX.com (ECN Broker Feed)", "FOREXCOM:XAUUSD"),
     CAPITAL_COM("Capital.com (Broker Gold Spot)", "CAPITALCOM:XAUUSD"),
@@ -52,14 +56,16 @@ fun WebChartTerminal(
     onApplyPatternToRisk: (DetectedPattern) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.OANDA) }
+    var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.BINANCE) }
     var keyReload by remember { mutableIntStateOf(0) }
     var lastLoadedContent by remember { mutableStateOf("") }
+    var isChartLoading by remember { mutableStateOf(true) }
+    var hasLoadingError by remember { mutableStateOf(false) }
 
     val rawSymbol = if (instrument == TradingInstrument.XAUUSD) {
         selectedFeedSource.tvSymbol
     } else {
-        "FX:EURUSD"
+        "BINANCE:EURUSDT"
     }
 
     val intervalStr = when (timeframe) {
@@ -191,13 +197,45 @@ fun WebChartTerminal(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.allowFileAccess = true
-                        settings.loadWithOverviewMode = true
-                        settings.useWideViewPort = true
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            allowFileAccess = false
+                            loadWithOverviewMode = true
+                            useWideViewPort = true
+                            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                        }
                         setBackgroundColor(android.graphics.Color.parseColor("#12151e"))
-                        webViewClient = WebViewClient()
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                isChartLoading = true
+                                hasLoadingError = false
+                            }
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                isChartLoading = false
+                            }
+                            override fun onReceivedError(
+                                view: WebView?,
+                                errorCode: Int,
+                                description: String?,
+                                failingUrl: String?
+                            ) {
+                                isChartLoading = false
+                                hasLoadingError = true
+                            }
+                            override fun onRenderProcessGone(
+                                view: WebView?,
+                                detail: RenderProcessGoneDetail?
+                            ): Boolean {
+                                // CRITICAL: returning true prevents Chromium from killing the host app
+                                isChartLoading = false
+                                hasLoadingError = true
+                                try {
+                                    view?.destroy()
+                                } catch (_: Throwable) {}
+                                return true
+                            }
+                        }
                         lastLoadedContent = htmlContent
                         loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
                     }
@@ -205,11 +243,100 @@ fun WebChartTerminal(
                 update = { webView ->
                     if (lastLoadedContent != htmlContent) {
                         lastLoadedContent = htmlContent
+                        isChartLoading = true
                         webView.loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
                     }
                 },
+                onRelease = { webView ->
+                    try {
+                        webView.stopLoading()
+                        webView.destroy()
+                    } catch (_: Throwable) {}
+                },
                 modifier = Modifier.fillMaxSize()
             )
+
+            // Loading Indicator Overlay
+            if (isChartLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkBackground.copy(alpha = 0.7f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = GoldPrimary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "Memuat Terminal TradingView Live...",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            // Error Fallback Overlay
+            if (hasLoadingError) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkBackground.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Koneksi Feed Broker Terkendala",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Pastikan koneksi internet aktif untuk memuat chart broker live.",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    keyReload++
+                                    hasLoadingError = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
+                            ) {
+                                Text("Muat Ulang", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            val ctx = LocalContext.current
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val tvUrl = "https://www.tradingview.com/chart/?symbol=${Uri.encode(rawSymbol)}"
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(tvUrl))
+                                        ctx.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldPrimary),
+                                border = BorderStroke(1.dp, GoldPrimary)
+                            ) {
+                                Text("Buka Browser", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
 
             // Live AI Auto-Scan Pattern Banner Overlay (Bottom Floating Bar)
             if (detectedPatterns.isNotEmpty()) {

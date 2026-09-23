@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 import kotlin.math.abs
-import kotlin.random.Random
 
 class ScalpingSignalEngine(
     private val signalDao: SignalDao,
@@ -89,6 +88,9 @@ class ScalpingSignalEngine(
     // Candlesticks flow for UI charts
     private val _chartCandles = MutableStateFlow<List<Candle>>(emptyList())
     val chartCandles: StateFlow<List<Candle>> = _chartCandles.asStateFlow()
+
+    private val _candlesVersion = MutableStateFlow(0L)
+    val candlesVersion: StateFlow<Long> = _candlesVersion.asStateFlow()
 
     var notificationsEnabled: Boolean = true
     private var isSimulating = false
@@ -242,7 +244,7 @@ class ScalpingSignalEngine(
             val currentXau = _xauPrice.value
             val currentEur = _eurPrice.value
 
-            // 1. Instant Priority Fetch for Core Scalping Timeframe (M5) -> 2 lightweight requests only!
+            // 1. Instant Priority Fetch for Core Scalping Timeframe (M5) -> 100% Data Riil Online
             coroutineScope {
                 launch(Dispatchers.IO) {
                     val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, Timeframe.M5, currentXau)
@@ -262,8 +264,7 @@ class ScalpingSignalEngine(
                             }
                         }
                         candleMap[xauKey] = mutableXau
-                    } else if (candleMap[xauKey].isNullOrEmpty()) {
-                        candleMap[xauKey] = liveMarketService.generateFallbackCandles(TradingInstrument.XAUUSD, Timeframe.M5, currentXau).toMutableList()
+                        _candlesVersion.value = System.currentTimeMillis()
                     }
                 }
 
@@ -285,8 +286,7 @@ class ScalpingSignalEngine(
                             }
                         }
                         candleMap[eurKey] = mutableEur
-                    } else if (candleMap[eurKey].isNullOrEmpty()) {
-                        candleMap[eurKey] = liveMarketService.generateFallbackCandles(TradingInstrument.EURUSD, Timeframe.M5, currentEur).toMutableList()
+                        _candlesVersion.value = System.currentTimeMillis()
                     }
                 }
             }
@@ -297,17 +297,19 @@ class ScalpingSignalEngine(
                 evaluateAutoSignals(forceNew = false)
             }
 
-            // 2. Lazy Background Fetch for remaining timeframes (M1, M15, M30, H1) without blocking UI
+            // 2. Background Fetch for remaining timeframes (M1, M15, M30, H1)
             val otherTimeframes = Timeframe.values().filter { it != Timeframe.M5 }
             for (tf in otherTimeframes) {
                 scope.launch(Dispatchers.IO) {
                     val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
                     if (!xauCandles.isNullOrEmpty()) {
                         candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toMutableList()
+                        _candlesVersion.value = System.currentTimeMillis()
                     }
                     val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
                     if (!eurCandles.isNullOrEmpty()) {
                         candleMap[Pair(TradingInstrument.EURUSD, tf)] = eurCandles.toMutableList()
+                        _candlesVersion.value = System.currentTimeMillis()
                     }
                 }
             }
@@ -374,6 +376,7 @@ class ScalpingSignalEngine(
                 )
             }
         }
+        _candlesVersion.value = System.currentTimeMillis()
     }
 
     private fun updateIndicatorsForBoth() {
@@ -389,11 +392,8 @@ class ScalpingSignalEngine(
         val key = Pair(instrument, timeframe)
         val existing = candleMap[key]
         if (existing.isNullOrEmpty()) {
-            val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
-            val baseline = liveMarketService.generateFallbackCandles(instrument, timeframe, livePrice).toMutableList()
-            candleMap[key] = baseline
             fetchTimeframeCandlesOnDemand(instrument, timeframe)
-            return baseline.toList()
+            return emptyList()
         }
         return existing.toList()
     }
@@ -417,6 +417,7 @@ class ScalpingSignalEngine(
                         }
                     }
                     candleMap[Pair(instrument, timeframe)] = mutable
+                    _candlesVersion.value = System.currentTimeMillis()
                     withContext(Dispatchers.Main) {
                         updateIndicatorsForBoth()
                     }
@@ -503,7 +504,8 @@ class ScalpingSignalEngine(
             "Rejection MA resistensi | EMA 9 < 21 | RSI: ${"%.1f".format(ind.rsi)} | Momentum Bearish Scalp"
         }
 
-        val confidenceVal = Random.nextInt(82, 94)
+        val rsiDist = kotlin.math.abs(ind.rsi - 50.0)
+        val confidenceVal = (82 + (rsiDist * 0.4).toInt()).coerceIn(82, 94)
 
         val newSignal = ScalpSignal(
             id = UUID.randomUUID().toString(),

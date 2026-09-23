@@ -199,13 +199,25 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
         engine.fetchTimeframeCandlesOnDemand(instrument, _selectedTimeframe.value)
     }
 
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
     fun selectTimeframe(tf: Timeframe) {
         _selectedTimeframe.value = tf
-        engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, tf)
+        viewModelScope.launch(Dispatchers.IO) {
+            _isScanning.value = true
+            try {
+                engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, tf)
+                engine.manualScanSignals()
+            } finally {
+                _isScanning.value = false
+            }
+        }
     }
 
     fun refreshChartAndScan() {
         viewModelScope.launch(Dispatchers.IO) {
+            _isScanning.value = true
             try {
                 val liveQuote = engine.liveMarketService.fetchLivePrices()
                 if (liveQuote != null && liveQuote.isLiveOnline) {
@@ -213,7 +225,10 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
                 }
                 engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, _selectedTimeframe.value)
                 engine.manualScanSignals()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                _isScanning.value = false
+            }
         }
     }
 
