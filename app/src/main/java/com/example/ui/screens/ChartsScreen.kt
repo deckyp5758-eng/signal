@@ -85,7 +85,10 @@ fun ChartsScreen(
     onSelectPatternFilter: (PatternTypeCategory) -> Unit,
     onSelectGradeFilter: (ConfluenceGrade?) -> Unit = {},
     onToggleHtfAlignedFilter: () -> Unit = {},
-    onApplyPatternToRisk: (DetectedPattern) -> Unit = {}
+    onApplyPatternToRisk: (DetectedPattern) -> Unit = {},
+    isLiveOnline: Boolean = true,
+    latencyMs: Long = 0L,
+    onRefreshScan: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = remember(context) {
@@ -250,6 +253,69 @@ fun ChartsScreen(
                     ),
                     modifier = Modifier.testTag("toggle_patterns_chip")
                 )
+            }
+        }
+
+        // Live Feed Status & Quick Rescan Bar
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (isLiveOnline) BuyGreen else SellRed)
+                        )
+                        Text(
+                            text = if (isLiveOnline) "Live • ${latencyMs}ms Spot" else "Offline • Reconnecting",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isLiveOnline) BuyGreen else SellRed
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = GoldPrimary.copy(alpha = 0.15f),
+                    border = BorderStroke(0.8.dp, GoldPrimary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .clickable { onRefreshScan() }
+                        .testTag("chart_quick_rescan_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Scan Ulang Cepat",
+                            tint = GoldPrimary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Scan Ulang",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldPrimary
+                        )
+                    }
+                }
             }
         }
 

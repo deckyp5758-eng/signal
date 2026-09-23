@@ -44,6 +44,7 @@ fun TradingViewLightweightChart(
     var isFitContentRequested by remember { mutableIntStateOf(0) }
     var selectedPatternIndex by remember { mutableIntStateOf(0) }
     var lastLoadedHtml by remember { mutableStateOf("") }
+    var lastBaseStructureKey by remember { mutableStateOf("") }
 
     // Sanitize candles: ensure strictly ascending order with unique second timestamps
     val sanitizedCandles = remember(candles) {
@@ -450,6 +451,13 @@ fun TradingViewLightweightChart(
                         });
                     }
 
+                    // Real-time ticking method for live market ticks without reloading page
+                    window.updateLastCandleTick = function(candle) {
+                        if (candleSeries && typeof candleSeries.update === 'function') {
+                            candleSeries.update(candle);
+                        }
+                    };
+
                     // Auto-scale to fit contents nicely
                     chart.timeScale().fitContent();
 
@@ -567,6 +575,20 @@ fun TradingViewLightweightChart(
                 .weight(1f)
                 .testTag("tradingview_lightweight_chart")
         ) {
+            val lastCandle = sanitizedCandles.lastOrNull()
+            val lastCandleJson = remember(lastCandle?.close, lastCandle?.high, lastCandle?.low, lastCandle?.timestamp) {
+                if (lastCandle == null) "{}"
+                else {
+                    JSONObject().apply {
+                        put("time", lastCandle.timestamp / 1000L)
+                        put("open", lastCandle.open)
+                        put("high", lastCandle.high)
+                        put("low", lastCandle.low)
+                        put("close", lastCandle.close)
+                    }.toString()
+                }
+            }
+
             AndroidView(
                 factory = { context ->
                     WebView(context).apply {
@@ -581,14 +603,22 @@ fun TradingViewLightweightChart(
                         settings.useWideViewPort = true
                         setBackgroundColor(android.graphics.Color.parseColor("#131722"))
                         webViewClient = WebViewClient()
+                        lastBaseStructureKey = "$instrument-$timeframe-$showPatterns-$showEma-$showVolume-$precision"
                         lastLoadedHtml = htmlDocument
                         loadDataWithBaseURL("https://unpkg.com", htmlDocument, "text/html", "UTF-8", null)
                     }
                 },
                 update = { webView ->
-                    if (lastLoadedHtml != htmlDocument) {
+                    val currentBaseKey = "$instrument-$timeframe-$showPatterns-$showEma-$showVolume-$precision-$isFitContentRequested"
+                    if (lastBaseStructureKey != currentBaseKey) {
+                        lastBaseStructureKey = currentBaseKey
                         lastLoadedHtml = htmlDocument
                         webView.loadDataWithBaseURL("https://unpkg.com", htmlDocument, "text/html", "UTF-8", null)
+                    } else if (lastLoadedHtml != htmlDocument) {
+                        lastLoadedHtml = htmlDocument
+                        webView.loadDataWithBaseURL("https://unpkg.com", htmlDocument, "text/html", "UTF-8", null)
+                    } else if (lastCandleJson != "{}") {
+                        webView.evaluateJavascript("if (typeof window.updateLastCandleTick === 'function') { window.updateLastCandleTick($lastCandleJson); }", null)
                     }
                 },
                 modifier = Modifier.fillMaxSize()

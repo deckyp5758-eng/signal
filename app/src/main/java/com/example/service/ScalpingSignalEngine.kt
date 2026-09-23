@@ -19,7 +19,7 @@ class ScalpingSignalEngine(
     private val notificationHelper: SignalNotificationHelper,
     private val scope: CoroutineScope
 ) {
-    private val liveMarketService = LiveMarketService()
+    val liveMarketService = LiveMarketService()
 
     // Live Feed Status
     private val _isLiveFeedOnline = MutableStateFlow(false)
@@ -392,9 +392,47 @@ class ScalpingSignalEngine(
             val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
             val baseline = liveMarketService.generateFallbackCandles(instrument, timeframe, livePrice).toMutableList()
             candleMap[key] = baseline
+            fetchTimeframeCandlesOnDemand(instrument, timeframe)
             return baseline.toList()
         }
         return existing.toList()
+    }
+
+    fun fetchTimeframeCandlesOnDemand(instrument: TradingInstrument, timeframe: Timeframe) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
+                val fetched = liveMarketService.fetchLiveCandles(instrument, timeframe, livePrice)
+                if (!fetched.isNullOrEmpty()) {
+                    val mutable = fetched.toMutableList()
+                    if (livePrice > 0.0 && mutable.isNotEmpty()) {
+                        val last = mutable.last()
+                        val diffRatio = abs(livePrice - last.close) / last.close
+                        if (diffRatio < 0.015) {
+                            mutable[mutable.lastIndex] = last.copy(
+                                close = livePrice,
+                                high = maxOf(last.high, livePrice),
+                                low = minOf(last.low, livePrice)
+                            )
+                        }
+                    }
+                    candleMap[Pair(instrument, timeframe)] = mutable
+                    withContext(Dispatchers.Main) {
+                        updateIndicatorsForBoth()
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun setLiveQuoteDirect(quote: LiveQuote) {
+        _xauPrice.value = quote.xauPrice
+        _eurPrice.value = quote.eurPrice
+        _isLiveFeedOnline.value = quote.isLiveOnline
+        _lastSyncTime.value = quote.timestamp
+        _latencyMs.value = quote.latencyMs
+        updateLastCandle(TradingInstrument.XAUUSD, quote.xauPrice)
+        updateLastCandle(TradingInstrument.EURUSD, quote.eurPrice)
     }
 
     fun manualScanSignals() {

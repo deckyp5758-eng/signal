@@ -364,7 +364,10 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                                 )
                             }
                             viewModel.selectTab(AppTab.RISK_MANAGER)
-                        }
+                        },
+                        isLiveOnline = isLiveFeedOnline,
+                        latencyMs = latencyMs,
+                        onRefreshScan = { viewModel.refreshChartAndScan() }
                     )
                 }
                 AppTab.CALENDAR -> {

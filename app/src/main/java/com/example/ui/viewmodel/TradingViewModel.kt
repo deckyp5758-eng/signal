@@ -196,10 +196,25 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
                 slPipsText = defaultPips
             )
         }
+        engine.fetchTimeframeCandlesOnDemand(instrument, _selectedTimeframe.value)
     }
 
     fun selectTimeframe(tf: Timeframe) {
         _selectedTimeframe.value = tf
+        engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, tf)
+    }
+
+    fun refreshChartAndScan() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val liveQuote = engine.liveMarketService.fetchLivePrices()
+                if (liveQuote != null && liveQuote.isLiveOnline) {
+                    engine.setLiveQuoteDirect(liveQuote)
+                }
+                engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, _selectedTimeframe.value)
+                engine.manualScanSignals()
+            } catch (_: Exception) {}
+        }
     }
 
     fun toggleNotifications(enabled: Boolean) {

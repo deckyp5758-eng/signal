@@ -29,8 +29,15 @@ object PatternRecognitionEngine {
         // Confluence Rating Grade & Multi-Timeframe Trend Analysis
         val enriched = enrichPatternsWithConfluence(rawPatterns, candles, instrument, currentTimeframe, htfCandles)
 
+        // Filter M1 noise: On ultra-fast 1-minute chart, suppress weak B-grade or counter-trend patterns to prevent false breakouts
+        val filtered = if (currentTimeframe == Timeframe.M1) {
+            enriched.filter { it.confluenceGrade != ConfluenceGrade.B || it.htfTrendAlignment == TrendAlignment.ALIGNED }
+        } else {
+            enriched
+        }
+
         // Sort by Confluence Grade, Score & Confidence
-        return enriched.sortedWith(
+        return filtered.sortedWith(
             compareByDescending<DetectedPattern> {
                 when (it.confluenceGrade) {
                     ConfluenceGrade.A_PLUS -> 3000
