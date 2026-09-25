@@ -197,6 +197,7 @@ fun WebChartTerminal(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true

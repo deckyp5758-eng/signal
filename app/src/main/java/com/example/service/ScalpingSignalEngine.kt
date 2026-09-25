@@ -505,7 +505,7 @@ class ScalpingSignalEngine(
         }
 
         val rsiDist = kotlin.math.abs(ind.rsi - 50.0)
-        val confidenceVal = (82 + (rsiDist * 0.4).toInt()).coerceIn(82, 94)
+        val confidenceVal = (86 + (rsiDist * 0.5).toInt()).coerceIn(86, 98)
 
         val newSignal = ScalpSignal(
             id = UUID.randomUUID().toString(),

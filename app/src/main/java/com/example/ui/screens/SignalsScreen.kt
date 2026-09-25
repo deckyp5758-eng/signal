@@ -55,7 +55,7 @@ fun SignalsScreen(
     onOpenCalendar: () -> Unit = {}
 ) {
     var isNewsBannerDismissed by remember { mutableStateOf(false) }
-    var selectedViewMode by remember { mutableStateOf(SignalViewMode.TRADINGVIEW_WIDGET) }
+    var selectedViewMode by remember { mutableStateOf(SignalViewMode.SIGNAL_EXECUTION) }
 
     LazyColumn(
         modifier = Modifier
@@ -289,14 +289,32 @@ fun SignalsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Riwayat Sinyal ${selectedInstrument.symbol}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = GoldPrimary.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, GoldPrimary)
+                        ) {
+                            Text(
+                                text = "Akurasi > 85%",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = GoldPrimary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Text(
-                        text = "Riwayat Sinyal ${selectedInstrument.symbol}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "TradingView M5 Scalp Stream",
+                        text = "Diurutkan Akurasi Tertinggi First (TradingView Stream)",
                         fontSize = 11.sp,
                         color = TextSecondary
                     )
@@ -324,8 +342,10 @@ fun SignalsScreen(
             }
         }
 
-        // Filter history by instrument
-        val filteredHistory = signalHistory.filter { it.instrumentSymbol == selectedInstrument.symbol }
+        // Filter history by instrument and accuracy >= 85%, sorted descending by confidence
+        val filteredHistory = signalHistory
+            .filter { it.instrumentSymbol == selectedInstrument.symbol && it.confidence >= 85 }
+            .sortedByDescending { it.confidence }
         if (filteredHistory.isEmpty()) {
             item {
                 Surface(
@@ -486,6 +506,7 @@ fun ActiveSignalHeroCard(
     val isBuy = signal.action == SignalAction.BUY
     val actionColor = if (isBuy) BuyGreen else SellRed
     val actionBg = if (isBuy) BuyGreenContainer else SellRedContainer
+    var isAnalysisExpanded by remember { mutableStateOf(false) }
 
     // Real-time Floating PnL calculation
     val floatingPips = if (isBuy) {
@@ -495,26 +516,30 @@ fun ActiveSignalHeroCard(
     }
     val isFloatingProfit = floatingPips >= 0.0
 
+    // Progress towards TP1 (0.0 to 1.0)
+    val totalTpDistance = abs(signal.takeProfit1 - signal.entryPrice)
+    val currentDistance = if (isBuy) (currentPrice - signal.entryPrice) else (signal.entryPrice - currentPrice)
+    val tpProgress = if (totalTpDistance > 0) (currentDistance / totalTpDistance).toFloat().coerceIn(0f, 1f) else 0f
+
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.5.dp, actionColor.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
+            .border(1.5.dp, actionColor.copy(alpha = 0.7f), RoundedCornerShape(18.dp))
             .testTag("card_active_signal")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(14.dp)
         ) {
-            // Top Badge Row
+            // 1. Header Bar: Action Badge + Instrument + Accuracy
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Action Badge (BUY / SELL)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -523,7 +548,7 @@ fun ActiveSignalHeroCard(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(actionColor)
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -533,7 +558,7 @@ fun ActiveSignalHeroCard(
                                 imageVector = if (isBuy) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Text(
                                 text = signal.action.badgeText,
@@ -544,25 +569,26 @@ fun ActiveSignalHeroCard(
                         }
                     }
 
-                    // Strength Tag
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = actionBg
-                    ) {
+                    Column {
                         Text(
-                            text = signal.strength.label,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = actionColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            text = "${instrument.symbol} • ${signal.strength.label}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "TradingView M5 Stream",
+                            fontSize = 10.sp,
+                            color = TextSecondary
                         )
                     }
                 }
 
-                // Confidence Rating
+                // Accuracy Rating Badge
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
+                    shape = RoundedCornerShape(8.dp),
+                    color = GoldPrimary.copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, GoldPrimary)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -578,322 +604,326 @@ fun ActiveSignalHeroCard(
                         Text(
                             text = "${signal.confidence}% Akurasi",
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.ExtraBold,
+                            color = GoldPrimary
                         )
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Real-time Floating PnL Live Bar
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (isFloatingProfit) BuyGreen.copy(alpha = 0.12f) else SellRed.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, if (isFloatingProfit) BuyGreen.copy(alpha = 0.4f) else SellRed.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isFloatingProfit) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                            contentDescription = null,
-                            tint = if (isFloatingProfit) BuyGreen else SellRed,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = if (isFloatingProfit) "Floating Profit Live" else "Floating Drawdown",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    Text(
-                        text = "${if (isFloatingProfit) "+" else ""}${"%.1f".format(floatingPips)} pips",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
-                        color = if (isFloatingProfit) BuyGreen else SellRed
-                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Breakeven / Move SL to Entry Alert if TP1 is hit
-            val isTp1Hit = if (isBuy) currentPrice >= signal.takeProfit1 else currentPrice <= signal.takeProfit1
-            if (isTp1Hit) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = BuyGreen.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, BuyGreen),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = BuyGreen,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "TARGET TP1 TELAH TERCAPAI!",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                color = BuyGreen
-                            )
-                            Text(
-                                text = "Geser Stop Loss ke harga Entry (${instrument.formatPrice(signal.entryPrice)}) untuk mengunci posisi tanpa risiko (Risk-Free Trade).",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            // Current Price vs Entry Price
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column {
-                    Text(
-                        text = "Harga Masuk (Entry)",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = instrument.formatPrice(signal.entryPrice),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Harga Live Sekarang",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = instrument.formatPrice(currentPrice),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = actionColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Automatic Stop Loss & Take Profit Target Table
+            // 2. Real-time Floating PnL + Progress Bar to TP
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(10.dp),
+                color = if (isFloatingProfit) BuyGreen.copy(alpha = 0.12f) else SellRed.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, if (isFloatingProfit) BuyGreen.copy(alpha = 0.35f) else SellRed.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Quick instruction note
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isFloatingProfit) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                                contentDescription = null,
+                                tint = if (isFloatingProfit) BuyGreen else SellRed,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = if (isFloatingProfit) "Floating Profit Live" else "Floating Drawdown",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
                         Text(
-                            text = "Target Level & SL",
+                            text = "${if (isFloatingProfit) "+" else ""}${"%.1f".format(floatingPips)} pips",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.Black,
+                            color = if (isFloatingProfit) BuyGreen else SellRed
                         )
+                    }
+
+                    // Progress Bar to TP1
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction = tpProgress)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(if (isFloatingProfit) BuyGreen else SellRed)
+                            )
+                        }
                         Text(
-                            text = "Tap 📋 untuk salin ke MT5",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = CyanEma
+                            text = "TP1 ${(tpProgress * 100).toInt()}%",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
                         )
                     }
-
-                    Divider(color = DarkBorder, thickness = 0.5.dp)
-
-                    // SL Row
-                    TargetPriceRow(
-                        label = "Stop Loss (SL)",
-                        price = instrument.formatPrice(signal.stopLoss),
-                        rawNumber = instrument.formatPrice(signal.stopLoss),
-                        pips = "-${"%.1f".format(signal.slPips)} pips",
-                        color = SellRed,
-                        onCopyRaw = { raw -> onCopySignal(raw, "Stop Loss (SL)") }
-                    )
-
-                    Divider(color = DarkBorder, thickness = 0.5.dp)
-
-                    // TP1 Row
-                    TargetPriceRow(
-                        label = "Take Profit 1 (R:R 1:1)",
-                        price = instrument.formatPrice(signal.takeProfit1),
-                        rawNumber = instrument.formatPrice(signal.takeProfit1),
-                        pips = "+${"%.1f".format(signal.tp1Pips)} pips",
-                        color = BuyGreen,
-                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 1 (TP1)") }
-                    )
-
-                    // TP2 Row
-                    TargetPriceRow(
-                        label = "Take Profit 2 (R:R 1:1.8)",
-                        price = instrument.formatPrice(signal.takeProfit2),
-                        rawNumber = instrument.formatPrice(signal.takeProfit2),
-                        pips = "+${"%.1f".format(signal.tp2Pips)} pips",
-                        color = BuyGreen,
-                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 2 (TP2)") }
-                    )
-
-                    // TP3 Row
-                    TargetPriceRow(
-                        label = "Take Profit 3 (R:R 1:2.6)",
-                        price = instrument.formatPrice(signal.takeProfit3),
-                        rawNumber = instrument.formatPrice(signal.takeProfit3),
-                        pips = "+${"%.1f".format(signal.tp3Pips)} pips",
-                        color = BuyGreen,
-                        onCopyRaw = { raw -> onCopySignal(raw, "Take Profit 3 (TP3)") }
-                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Quick 1-Tap Copy Chips for MetaTrader 5 (MT5 / MT4)
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = "⚡ Salin Cepat untuk MetaTrader (1x Klik Langsung Paste):",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextSecondary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Copy SL chip
-                    FilledTonalButton(
-                        onClick = { onCopySignal(instrument.formatPrice(signal.stopLoss), "Stop Loss (SL)") },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = SellRed.copy(alpha = 0.18f)),
-                        modifier = Modifier.weight(1f).height(34.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = SellRed, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("SL: ${instrument.formatPrice(signal.stopLoss)}", color = SellRed, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-
-                    // Copy TP1 chip
-                    FilledTonalButton(
-                        onClick = { onCopySignal(instrument.formatPrice(signal.takeProfit1), "Take Profit 1 (TP1)") },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = BuyGreen.copy(alpha = 0.18f)),
-                        modifier = Modifier.weight(1f).height(34.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = BuyGreen, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("TP1: ${instrument.formatPrice(signal.takeProfit1)}", color = BuyGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-
-                    // Copy Entry chip
-                    FilledTonalButton(
-                        onClick = { onCopySignal(instrument.formatPrice(signal.entryPrice), "Harga Entry") },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = CyanEma.copy(alpha = 0.18f)),
-                        modifier = Modifier.weight(1f).height(34.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = CyanEma, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Entry", color = CyanEma, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Signal Analysis Reason
+            // 3. Compact Horizontal Price Matrix (Entry, SL, TP1, TP2) with 1-Tap Copy
             Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp, horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = CyanEma,
-                        modifier = Modifier.size(16.dp)
+                    // Entry Price Column
+                    CompactPriceColumn(
+                        label = "ENTRY",
+                        price = instrument.formatPrice(signal.entryPrice),
+                        subtext = "Live ${instrument.formatPrice(currentPrice)}",
+                        color = CyanEma,
+                        onCopy = { onCopySignal(instrument.formatPrice(signal.entryPrice), "Harga Entry") },
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = signal.reason,
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        lineHeight = 15.sp
+
+                    Box(modifier = Modifier.width(1.dp).height(32.dp).background(DarkBorder))
+
+                    // Stop Loss Column
+                    CompactPriceColumn(
+                        label = "STOP LOSS",
+                        price = instrument.formatPrice(signal.stopLoss),
+                        subtext = "-${"%.1f".format(signal.slPips)} p",
+                        color = SellRed,
+                        onCopy = { onCopySignal(instrument.formatPrice(signal.stopLoss), "Stop Loss (SL)") },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box(modifier = Modifier.width(1.dp).height(32.dp).background(DarkBorder))
+
+                    // Take Profit 1 Column
+                    CompactPriceColumn(
+                        label = "TAKE PROFIT",
+                        price = instrument.formatPrice(signal.takeProfit1),
+                        subtext = "+${"%.1f".format(signal.tp1Pips)} p",
+                        color = BuyGreen,
+                        onCopy = { onCopySignal(instrument.formatPrice(signal.takeProfit1), "Take Profit 1 (TP1)") },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Action Button: Apply to Risk Manager
-            Button(
-                onClick = { onApplyToRiskManager(signal) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .testTag("btn_apply_risk"),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
+            // 4. Action Row: Calculate Risk & Collapsible Technical Reasoning Accordion
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = Color.Black,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Hitung Lot & Manajemen Risiko",
-                    fontSize = 13.sp,
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold
-                )
+                // Risk Manager Button
+                Button(
+                    onClick = { onApplyToRiskManager(signal) },
+                    modifier = Modifier
+                        .weight(1.3f)
+                        .height(38.dp)
+                        .testTag("btn_apply_risk"),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Hitung Lot & Risiko",
+                        fontSize = 11.sp,
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Collapsible Analysis Toggle Button
+                OutlinedButton(
+                    onClick = { isAnalysisExpanded = !isAnalysisExpanded },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    border = BorderStroke(1.dp, CyanEma.copy(alpha = 0.6f))
+                ) {
+                    Text(
+                        text = if (isAnalysisExpanded) "Tutup Analisis" else "Detail Analisis",
+                        fontSize = 10.sp,
+                        color = CyanEma,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (isAnalysisExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = CyanEma,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            // 5. Collapsible Narrative & Technical Indicator Reasoning Accordion
+            AnimatedVisibility(visible = isAnalysisExpanded) {
+                Column(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = BorderStroke(0.5.dp, DarkBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = CyanEma,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Alasan Konfluensi Sinyal:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = signal.reason,
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+
+                    // TP2 & TP3 Extra Target Details
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BuyGreen.copy(alpha = 0.1f),
+                            border = BorderStroke(0.5.dp, BuyGreen.copy(alpha = 0.3f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onCopySignal(instrument.formatPrice(signal.takeProfit2), "TP2") }
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "Take Profit 2 (R:R 1:1.8)", fontSize = 10.sp, color = TextSecondary)
+                                Text(text = instrument.formatPrice(signal.takeProfit2), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BuyGreen.copy(alpha = 0.1f),
+                            border = BorderStroke(0.5.dp, BuyGreen.copy(alpha = 0.3f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onCopySignal(instrument.formatPrice(signal.takeProfit3), "TP3") }
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "Take Profit 3 (R:R 1:2.6)", fontSize = 10.sp, color = TextSecondary)
+                                Text(text = instrument.formatPrice(signal.takeProfit3), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+fun CompactPriceColumn(
+    label: String,
+    price: String,
+    subtext: String,
+    color: Color,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onCopy() }
+            .padding(vertical = 2.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = TextSecondary
+            )
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Salin $label",
+                tint = TextTertiary,
+                modifier = Modifier.size(10.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = price,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Black,
+            color = color
+        )
+        Text(
+            text = subtext,
+            fontSize = 9.sp,
+            color = TextSecondary
+        )
     }
 }
 

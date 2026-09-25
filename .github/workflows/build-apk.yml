@@ -43,35 +43,59 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Extract App Version
+        id: get_version
+        run: |
+          VERSION_NAME=$(grep -E 'versionName\s*=\s*"' build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VERSION_NAME" ]; then
+            VERSION_NAME="1.4"
+          fi
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+          else
+            TAG_NAME="v${VERSION_NAME}"
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "Extracted App Version: $VERSION_NAME, Tag: $TAG_NAME"
+
+      - name: Build Android APK
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Prepare Output
+      - name: Prepare Release Artifacts
         run: |
           mkdir -p build_output
+          cp app/build/outputs/apk/debug/app-debug.apk "build_output/ScalpSignal-v${{ env.VERSION_NAME }}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk build_output/ScalpSignal-Latest.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ScalpSignal-APK
-          path: build_output/ScalpSignal-Latest.apk
+          name: ScalpSignal-v${{ env.VERSION_NAME }}-APK
+          path: build_output/*.apk
           retention-days: 30
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build_output/ScalpSignal-Latest.apk
-          tag_name: latest
-          name: "ScalpSignal App - Latest Build #${{ github.run_number }}"
+          files: |
+            build_output/ScalpSignal-v${{ env.VERSION_NAME }}.apk
+            build_output/ScalpSignal-Latest.apk
+          tag_name: ${{ env.TAG_NAME }}
+          name: "ScalpSignal App v${{ env.VERSION_NAME }} (Build #${{ github.run_number }})"
           body: |
-            ## 🚀 ScalpSignal Android APK Update
-            
-            Unduh dan instal langsung file APK di bawah ini di HP Android Anda:
-            - 📱 **File**: `ScalpSignal-Latest.apk`
-            - ⏱️ **Build**: #${{ github.run_number }}
-            - 🏷️ **Commit**: `${{ github.sha }}`
+            ## 🚀 ScalpSignal Android APK Update v${{ env.VERSION_NAME }}
+
+            Pembaruan aplikasi **ScalpSignal** versi **v${{ env.VERSION_NAME }}** dengan fitur scalping terbaru & peningkatan UI.
+
+            ### 📱 File Unduhan:
+            - 🔹 **File Versi**: `ScalpSignal-v${{ env.VERSION_NAME }}.apk`
+            - ⚡ **File Terbaru**: `ScalpSignal-Latest.apk`
+
+            ---
+            * **Build Number**: `#${{ github.run_number }}`
+            * **Commit SHA**: `${{ github.sha }}`
           draft: false
           prerelease: false
         env:

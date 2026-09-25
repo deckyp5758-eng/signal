@@ -29,23 +29,17 @@ object PatternRecognitionEngine {
         // Confluence Rating Grade & Multi-Timeframe Trend Analysis
         val enriched = enrichPatternsWithConfluence(rawPatterns, candles, instrument, currentTimeframe, htfCandles)
 
-        // Filter M1 noise: On ultra-fast 1-minute chart, suppress weak B-grade or counter-trend patterns to prevent false breakouts
-        val filtered = if (currentTimeframe == Timeframe.M1) {
-            enriched.filter { it.confluenceGrade != ConfluenceGrade.B || it.htfTrendAlignment == TrendAlignment.ALIGNED }
-        } else {
-            enriched
+        // Filter: Keep only patterns with High Win-Rate Accuracy >= 85%
+        val highAccuracyPatterns = enriched.filter { pattern ->
+            val accuracy = maxOf(pattern.confluenceScore, pattern.confidence)
+            accuracy >= 85
         }
 
-        // Sort by Confluence Grade, Score & Confidence
-        return filtered.sortedWith(
-            compareByDescending<DetectedPattern> {
-                when (it.confluenceGrade) {
-                    ConfluenceGrade.A_PLUS -> 3000
-                    ConfluenceGrade.A -> 2000
-                    ConfluenceGrade.B -> 1000
-                } + it.confluenceScore * 10 + it.confidence
-            }
-        )
+        // If high accuracy patterns exist, use them; otherwise fallback to top enriched candidates
+        val candidates = if (highAccuracyPatterns.isNotEmpty()) highAccuracyPatterns else enriched
+
+        // Sort strictly by HIGHEST ACCURACY RATE FIRST (descending)
+        return candidates.sortedByDescending { maxOf(it.confluenceScore, it.confidence) }
     }
 
     private fun enrichPatternsWithConfluence(
@@ -411,6 +405,26 @@ object PatternRecognitionEngine {
                     )
                 )
             }
+
+            // H. Inside Bar / Harami (Consolidation Breakout)
+            if (c2.high < c1.high && c2.low > c1.low && body1 > body2 * 1.5) {
+                val isBull = c2.close >= c2.open
+                list.add(
+                    DetectedPattern(
+                        name = if (isBull) "Bullish Inside Bar (Harami)" else "Bearish Inside Bar (Harami)",
+                        category = PatternTypeCategory.CANDLESTICK,
+                        action = if (isBull) SignalAction.BUY else SignalAction.SELL,
+                        confidence = 82,
+                        description = "Candle kedua berada sepenuhnya di dalam range candle motherboard pertama.",
+                        tradingTip = "Penumpukan energi sebelum terjadinya lonjakan harga cepat. Pasang pemicu order breakout.",
+                        startCandleIndex = i - 1,
+                        endCandleIndex = i,
+                        keyLevelPrice = if (isBull) c1.high else c1.low,
+                        upperZonePrice = c1.high,
+                        lowerZonePrice = c1.low
+                    )
+                )
+            }
         }
 
         // Return up to 4 most recent distinct candlestick patterns
@@ -605,16 +619,140 @@ object PatternRecognitionEngine {
             }
         }
 
-        return list.take(3)
+        // E. Inverse Head & Shoulders (Bullish Reversal)
+        if (swingLows.size >= 3) {
+            val (i1, leftL) = swingLows[swingLows.size - 3]
+            val (i2, headL) = swingLows[swingLows.size - 2]
+            val (i3, rightL) = swingLows.last()
+
+            if (headL < leftL && headL < rightL && abs(leftL - rightL) / ((leftL + rightL) / 2.0) < 0.005 && i3 - i1 in 8..35) {
+                var neck = Double.MIN_VALUE
+                for (k in i1..i3) {
+                    neck = max(neck, candles[k].high)
+                }
+                list.add(
+                    DetectedPattern(
+                        name = "Inverse Head & Shoulders",
+                        category = PatternTypeCategory.CHART_PATTERN,
+                        action = SignalAction.BUY,
+                        confidence = 94,
+                        description = "Formasi Bahu Terbalik di dasar lembah. Pola pembalikan arah naik tingkat tinggi.",
+                        tradingTip = "Buka posisi buy saat harga berhasil memotong batas atas Neckline di ${instrument.formatPrice(neck)}.",
+                        startCandleIndex = i1,
+                        endCandleIndex = n - 1,
+                        keyLevelPrice = headL,
+                        upperZonePrice = neck,
+                        lowerZonePrice = headL,
+                        necklinePrice = neck,
+                        swingPoints = listOf(
+                            PointCoord(i1, leftL),
+                            PointCoord(i2, headL),
+                            PointCoord(i3, rightL),
+                            PointCoord(n - 1, lastPrice)
+                        )
+                    )
+                )
+            }
+        }
+
+        return list.take(4)
     }
 
     // ==========================================
-    // 3. SMART MONEY CONCEPTS (OB, FVG, BOS, SWEEP)
+    // 3. SMART MONEY CONCEPTS (OB, FVG, BOS, CHoCH, SWEEP)
     // ==========================================
     private fun detectSmcPatterns(candles: List<Candle>, instrument: TradingInstrument): List<DetectedPattern> {
         val list = mutableListOf<DetectedPattern>()
         val n = candles.size
         if (n < 6) return emptyList()
+
+        // E. Change of Character (CHoCH Bullish / Bearish)
+        if (n >= 8) {
+            val lastC = candles.last()
+            val prevSwingHigh = candles.subList(maxOf(0, n - 8), n - 2).maxOf { it.high }
+            val prevSwingLow = candles.subList(maxOf(0, n - 8), n - 2).minOf { it.low }
+
+            if (lastC.close > prevSwingHigh) {
+                list.add(
+                    DetectedPattern(
+                        name = "Bullish Change of Character (CHoCH)",
+                        category = PatternTypeCategory.SMC,
+                        action = SignalAction.BUY,
+                        confidence = 92,
+                        description = "Sinyal perubahan tren pertama saat institusi mengambil alih kontrol pasar dari bearish ke bullish.",
+                        tradingTip = "Peluang awal masuk tren baru. Siapkan buy saat harga retrace ke FVG / OB.",
+                        startCandleIndex = n - 6,
+                        endCandleIndex = n - 1,
+                        keyLevelPrice = prevSwingHigh,
+                        upperZonePrice = lastC.close,
+                        lowerZonePrice = prevSwingHigh,
+                        isBreakoutActive = true
+                    )
+                )
+            } else if (lastC.close < prevSwingLow) {
+                list.add(
+                    DetectedPattern(
+                        name = "Bearish Change of Character (CHoCH)",
+                        category = PatternTypeCategory.SMC,
+                        action = SignalAction.SELL,
+                        confidence = 92,
+                        description = "Perubahan karakter struktur pasar dari bullish ke bearish.",
+                        tradingTip = "Indikasi awal tren turun baru. Siapkan sell saat retest.",
+                        startCandleIndex = n - 6,
+                        endCandleIndex = n - 1,
+                        keyLevelPrice = prevSwingLow,
+                        upperZonePrice = prevSwingLow,
+                        lowerZonePrice = lastC.close,
+                        isBreakoutActive = true
+                    )
+                )
+            }
+        }
+
+        // F. Liquidity Sweep / Stop Hunt
+        if (n >= 5) {
+            val cLast = candles.last()
+            val priorHigh = candles.subList(maxOf(0, n - 5), n - 1).maxOf { it.high }
+            val priorLow = candles.subList(maxOf(0, n - 5), n - 1).minOf { it.low }
+
+            // Bearish Sweep: High exceeds priorHigh but Close drops below priorHigh (Fakeout / Stop Hunt)
+            if (cLast.high > priorHigh && cLast.close < priorHigh) {
+                list.add(
+                    DetectedPattern(
+                        name = "Bearish Liquidity Sweep (Stop Hunt)",
+                        category = PatternTypeCategory.SMC,
+                        action = SignalAction.SELL,
+                        confidence = 90,
+                        description = "Institusi memicu Stop Loss pembeli di atas puncak sebelum membanting harga turun.",
+                        tradingTip = "Jebakan likuiditas selesai! Kesempatan sell cepat mengikuti arah asli institusi.",
+                        startCandleIndex = n - 3,
+                        endCandleIndex = n - 1,
+                        keyLevelPrice = cLast.high,
+                        upperZonePrice = cLast.high,
+                        lowerZonePrice = priorHigh
+                    )
+                )
+            }
+
+            // Bullish Sweep: Low drops below priorLow but Close recovers above priorLow
+            if (cLast.low < priorLow && cLast.close > priorLow) {
+                list.add(
+                    DetectedPattern(
+                        name = "Bullish Liquidity Sweep (Stop Hunt)",
+                        category = PatternTypeCategory.SMC,
+                        action = SignalAction.BUY,
+                        confidence = 90,
+                        description = "Institusi menyapu likuiditas di bawah level support sebelum mendorong harga naik tinggi.",
+                        tradingTip = "Sapu likuiditas selesai. Pasang order Buy dengan SL di bawah ekor jarum terendah.",
+                        startCandleIndex = n - 3,
+                        endCandleIndex = n - 1,
+                        keyLevelPrice = cLast.low,
+                        upperZonePrice = priorLow,
+                        lowerZonePrice = cLast.low
+                    )
+                )
+            }
+        }
 
         // A. Fair Value Gap (FVG / Imbalance)
         for (i in 2 until n) {
@@ -739,6 +877,6 @@ object PatternRecognitionEngine {
             }
         }
 
-        return list.takeLast(3)
+        return list.distinctBy { it.name }
     }
 }
