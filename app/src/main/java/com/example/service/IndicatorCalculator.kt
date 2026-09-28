@@ -122,9 +122,42 @@ object IndicatorCalculator {
 
     data class BollingerResult(val upper: Double, val middle: Double, val lower: Double)
 
+    fun calculateBollingerBandsSeries(closes: List<Double>, period: Int = 20, multiplier: Double = 2.0): List<BollingerResult> {
+        if (closes.isEmpty()) return emptyList()
+        val results = ArrayList<BollingerResult>(closes.size)
+        var sum = 0.0
+        var sumSq = 0.0
+
+        for (i in closes.indices) {
+            val close = closes[i]
+            sum += close
+            sumSq += close * close
+
+            if (i >= period) {
+                val old = closes[i - period]
+                sum -= old
+                sumSq -= old * old
+            }
+
+            val count = minOf(i + 1, period)
+            val mean = sum / count
+            val variance = maxOf(0.0, (sumSq / count) - (mean * mean))
+            val stdDev = sqrt(variance)
+
+            results.add(
+                BollingerResult(
+                    upper = mean + (multiplier * stdDev),
+                    middle = mean,
+                    lower = mean - (multiplier * stdDev)
+                )
+            )
+        }
+        return results
+    }
+
     fun calculateBollingerBands(closes: List<Double>, period: Int = 20, multiplier: Double = 2.0): BollingerResult {
         if (closes.size < period) {
-            val mean = closes.average()
+            val mean = if (closes.isNotEmpty()) closes.average() else 0.0
             return BollingerResult(mean * 1.01, mean, mean * 0.99)
         }
 

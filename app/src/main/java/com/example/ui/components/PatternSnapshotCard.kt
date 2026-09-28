@@ -58,7 +58,6 @@ fun PatternSnapshotCard(
     currentPrice: Double,
     indicators: IndicatorValues?,
     onApplyToChart: () -> Unit = {},
-    onApplyToRisk: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isBuy = pattern.action == SignalAction.BUY
@@ -329,8 +328,8 @@ fun PatternSnapshotCard(
                     snapshotCandles.forEachIndexed { i, c ->
                         val x = i * colW + colW / 2f
                         val isBull = c.close >= c.open
-                        // Warna kontras tinggi & tegas khas terminal profesional
-                        val cColor = if (isBull) Color(0xFF00E676) else Color(0xFFFF5252)
+                        // Warna kontras tinggi & tegas khas OANDA TradingView
+                        val cColor = if (isBull) Color(0xFF089981) else Color(0xFFF23645)
 
                         val yH = priceToY(c.high)
                         val yL = priceToY(c.low)
@@ -623,28 +622,6 @@ fun PatternSnapshotCard(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Button(
-                    onClick = onApplyToRisk,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(34.dp).testTag("apply_snapshot_risk_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Hitung Lot & Risiko",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
                     )
                 }
             }

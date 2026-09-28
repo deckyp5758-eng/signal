@@ -11,34 +11,19 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.SignalEntity
 import com.example.data.local.TradePlanEntity
 import com.example.data.model.*
-import com.example.service.ChartDataEngine
-import com.example.service.ChartRenderState
 import com.example.service.ScalpingSignalEngine
 import com.example.service.SignalNotificationHelper
 import com.example.service.UpdateState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 enum class AppTab(val title: String) {
     CHARTS("Grafik"),
     CALENDAR("Kalender"),
-    RISK_MANAGER("Risiko & SL/TP"),
-    DIAGNOSTICS("Diagnostik"),
     TUTORIAL("Panduan Pemula")
 }
-
-data class RiskCalcInput(
-    val balanceText: String = "1000",
-    val riskPercent: Double = 1.5,
-    val currency: AccountCurrency = AccountCurrency.USD,
-    val accountType: AccountType = AccountType.STANDARD,
-    val idrUsdRate: Double = 16000.0,
-    val action: SignalAction = SignalAction.BUY,
-    val entryPriceText: String = "",
-    val slPipsText: String = "20",
-    val riskReward: Double = 2.0
-)
 
 class TradingViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -50,14 +35,6 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     val engine = ScalpingSignalEngine(signalDao, notificationHelper, viewModelScope)
     val calendarService = com.example.service.EconomicCalendarService()
     val githubUpdateService = com.example.service.GitHubUpdateService(application)
-
-    // Background Chart Calculation & Rendering Engine (Dispatchers.Default)
-    val chartDataEngine = ChartDataEngine(
-        normalizerService = engine.normalizerService,
-        scope = viewModelScope,
-        calculationDispatcher = Dispatchers.Default
-    )
-    val chartRenderState: StateFlow<ChartRenderState> = chartDataEngine.renderState
 
     // GitHub Auto-Update State
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -109,26 +86,6 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     val tradePlansHistory: StateFlow<List<TradePlanEntity>> = signalDao.getAllTradePlans()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Risk calculator input state with persistent user balance, currency, and risk percentage
-    private val savedBalance = prefs.getString("user_balance", "1000") ?: "1000"
-    private val savedRiskPct = prefs.getFloat("user_risk_pct", 1.5f).toDouble()
-    private val savedCurrencyCode = prefs.getString("user_currency", AccountCurrency.USD.name) ?: AccountCurrency.USD.name
-    private val savedCurrency = try { AccountCurrency.valueOf(savedCurrencyCode) } catch (_: Exception) { AccountCurrency.USD }
-    private val savedAccountTypeCode = prefs.getString("user_account_type", AccountType.STANDARD.name) ?: AccountType.STANDARD.name
-    private val savedAccountType = try { AccountType.valueOf(savedAccountTypeCode) } catch (_: Exception) { AccountType.STANDARD }
-    private val savedIdrRate = prefs.getFloat("user_idr_rate", 16000f).toDouble()
-
-    private val _riskInput = MutableStateFlow(
-        RiskCalcInput(
-            balanceText = savedBalance,
-            riskPercent = savedRiskPct,
-            currency = savedCurrency,
-            accountType = savedAccountType,
-            idrUsdRate = savedIdrRate
-        )
-    )
-    val riskInput: StateFlow<RiskCalcInput> = _riskInput.asStateFlow()
-
     // Chart display settings
     private val _showEma = MutableStateFlow(true)
     val showEma: StateFlow<Boolean> = _showEma.asStateFlow()
@@ -168,43 +125,6 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
                 refreshCalendar()
             }
         }
-
-        // Initialize entry price for risk calculator with default gold price
-        updateRiskInput {
-            it.copy(
-                entryPriceText = TradingInstrument.XAUUSD.formatPrice(engine.xauPrice.value),
-                slPipsText = "25"
-            )
-        }
-
-        // Background Chart Calculation Pipeline (Dispatchers.Default)
-        // Automatically recomputes candle normalization, indicators, and SMC patterns in the background
-        viewModelScope.launch(Dispatchers.Default) {
-            combine(
-                _selectedInstrument,
-                _selectedTimeframe,
-                engine.candlesVersion
-            ) { inst, tf, _ ->
-                Pair(inst, tf)
-            }.collect { (inst, tf) ->
-                triggerChartCalculation(inst, tf)
-            }
-        }
-    }
-
-    fun triggerChartCalculation(
-        inst: TradingInstrument = _selectedInstrument.value,
-        tf: Timeframe = _selectedTimeframe.value
-    ) {
-        val livePrice = if (inst == TradingInstrument.XAUUSD) engine.xauPrice.value else engine.eurPrice.value
-        val rawCandles = engine.getCandles(inst, tf)
-        chartDataEngine.computeChartDataAsync(
-            rawCandles = rawCandles,
-            instrument = inst,
-            timeframe = tf,
-            livePriceRef = livePrice,
-            candleMapProvider = { i, t -> engine.getCandles(i, t) }
-        )
     }
 
     fun refreshCalendar() {
@@ -226,23 +146,18 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     fun selectInstrument(instrument: TradingInstrument) {
         _selectedInstrument.value = instrument
         _newsShield.value = calendarService.evaluateNewsShield(instrument)
-        val price = if (instrument == TradingInstrument.XAUUSD) engine.xauPrice.value else engine.eurPrice.value
-        val defaultPips = if (instrument == TradingInstrument.XAUUSD) "25" else "15"
-        updateRiskInput {
-            it.copy(
-                entryPriceText = instrument.formatPrice(price),
-                slPipsText = defaultPips
-            )
-        }
         engine.fetchTimeframeCandlesOnDemand(instrument, _selectedTimeframe.value)
     }
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    private var scanJob: Job? = null
+
     fun selectTimeframe(tf: Timeframe) {
         _selectedTimeframe.value = tf
-        viewModelScope.launch(Dispatchers.IO) {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
             _isScanning.value = true
             try {
                 engine.fetchTimeframeCandlesOnDemand(_selectedInstrument.value, tf)
@@ -254,7 +169,8 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshChartAndScan() {
-        viewModelScope.launch(Dispatchers.IO) {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
             _isScanning.value = true
             try {
                 val liveQuote = engine.liveMarketService.fetchLivePrices()
@@ -315,92 +231,6 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
         return Timeframe.values().associateWith { tf ->
             val c = engine.getCandles(instrument, tf)
             com.example.service.IndicatorCalculator.calculateTrend(c)
-        }
-    }
-
-
-    // Risk calculator handlers
-    fun updateRiskInput(transform: (RiskCalcInput) -> RiskCalcInput) {
-        val updated = transform(_riskInput.value)
-        _riskInput.value = updated
-        // Save user balance, currency, account type and risk preferences
-        prefs.edit()
-            .putString("user_balance", updated.balanceText)
-            .putFloat("user_risk_pct", updated.riskPercent.toFloat())
-            .putString("user_currency", updated.currency.name)
-            .putString("user_account_type", updated.accountType.name)
-            .putFloat("user_idr_rate", updated.idrUsdRate.toFloat())
-            .apply()
-    }
-
-    fun syncRiskEntryWithLivePrice() {
-        val currentPrice = if (_selectedInstrument.value == TradingInstrument.XAUUSD) {
-            engine.xauPrice.value
-        } else {
-            engine.eurPrice.value
-        }
-        updateRiskInput { it.copy(entryPriceText = _selectedInstrument.value.formatPrice(currentPrice)) }
-    }
-
-    fun syncRiskWithSignal(signal: ScalpSignal) {
-        _selectedInstrument.value = signal.instrument
-        updateRiskInput {
-            it.copy(
-                action = signal.action,
-                entryPriceText = signal.instrument.formatPrice(signal.entryPrice),
-                slPipsText = "%.1f".format(signal.slPips),
-                riskReward = signal.riskReward
-            )
-        }
-        _currentTab.value = AppTab.RISK_MANAGER
-    }
-
-    fun calculateCurrentRisk(): RiskCalculation {
-        val input = _riskInput.value
-        val balance = input.balanceText.toDoubleOrNull() ?: 1000.0
-        val inst = _selectedInstrument.value
-        val livePrice = if (inst == TradingInstrument.XAUUSD) engine.xauPrice.value else engine.eurPrice.value
-        val entry = input.entryPriceText.toDoubleOrNull() ?: livePrice
-        val slPips = input.slPipsText.toDoubleOrNull() ?: (if (inst == TradingInstrument.XAUUSD) 25.0 else 15.0)
-
-        return engine.calculateRiskManagement(
-            instrument = inst,
-            action = input.action,
-            accountBalance = balance,
-            riskPercent = input.riskPercent,
-            entryPrice = entry,
-            customSlPips = slPips,
-            riskRewardRatio = input.riskReward,
-            accountCurrency = input.currency,
-            accountType = input.accountType,
-            idrUsdRate = input.idrUsdRate
-        )
-    }
-
-    fun saveTradePlan(calc: RiskCalculation) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val currencySymbol = calc.accountCurrency.symbol
-            val entity = TradePlanEntity(
-                instrumentSymbol = calc.instrument.symbol,
-                action = calc.action.name,
-                accountBalance = calc.accountBalance,
-                riskPercent = calc.riskPercent,
-                lotSize = calc.lotSize,
-                entryPrice = calc.entryPrice,
-                stopLossPrice = calc.stopLossPrice,
-                takeProfitPrice = calc.takeProfit2,
-                maxLossUsd = calc.maxLossCurrency,
-                potentialProfitUsd = calc.potentialProfit2Currency,
-                notes = "${calc.accountType.displayName} | R:R 1:${calc.riskRewardRatio} | Pip Value: $currencySymbol${"%.2f".format(calc.pipValuePerLotCurrency)}/lot"
-            )
-            signalDao.insertTradePlan(entity)
-        }
-        Toast.makeText(getApplication(), "Rencana trading berhasil disimpan!", Toast.LENGTH_SHORT).show()
-    }
-
-    fun deleteTradePlan(id: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            signalDao.deleteTradePlan(id)
         }
     }
 
