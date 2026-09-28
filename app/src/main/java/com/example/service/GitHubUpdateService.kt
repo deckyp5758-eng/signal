@@ -96,8 +96,8 @@ class GitHubUpdateService(private val context: Context) {
     }
 
     private fun isVersionGreater(newVer: String, currentVer: String): Boolean {
-        val cleanNew = newVer.replace("v", "", ignoreCase = true).trim()
-        val cleanCurrent = currentVer.replace("v", "", ignoreCase = true).trim()
+        val cleanNew = newVer.replace("v", "", ignoreCase = true).split("-")[0].split("_")[0].trim()
+        val cleanCurrent = currentVer.replace("v", "", ignoreCase = true).split("-")[0].split("_")[0].trim()
         if (cleanNew == cleanCurrent) return false
 
         val newParts = cleanNew.split(".").mapNotNull { it.toIntOrNull() }

@@ -46,9 +46,9 @@ jobs:
       - name: Extract App Version
         id: get_version
         run: |
-          VERSION_NAME=$(grep -E 'versionName\s*=\s*"' build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_NAME=$(grep -E 'versionName\s*=\s*"' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           if [ -z "$VERSION_NAME" ]; then
-            VERSION_NAME="1.4"
+            VERSION_NAME="2.0.0"
           fi
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG_NAME="${{ github.ref_name }}"
@@ -66,6 +66,7 @@ jobs:
       - name: Prepare Release Artifacts
         run: |
           mkdir -p build_output
+          cp app/build/outputs/apk/debug/app-debug.apk "build_output/ScalpSignal-v${{ env.VERSION_NAME }}-b${{ github.run_number }}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "build_output/ScalpSignal-v${{ env.VERSION_NAME }}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk build_output/ScalpSignal-Latest.apk
 
@@ -77,9 +78,12 @@ jobs:
           retention-days: 30
 
       - name: Create or Update GitHub Release
+        id: create_release
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            build_output/ScalpSignal-v${{ env.VERSION_NAME }}-b${{ github.run_number }}.apk
             build_output/ScalpSignal-v${{ env.VERSION_NAME }}.apk
             build_output/ScalpSignal-Latest.apk
           tag_name: ${{ env.TAG_NAME }}
@@ -87,16 +91,29 @@ jobs:
           body: |
             ## 🚀 ScalpSignal Android APK Update v${{ env.VERSION_NAME }}
 
-            Pembaruan aplikasi **ScalpSignal** versi **v${{ env.VERSION_NAME }}** dengan fitur scalping terbaru & peningkatan UI.
+            Pembaruan aplikasi **ScalpSignal** versi **v${{ env.VERSION_NAME }}** dengan sinkronisasi grafik OANDA/FOREXCOM & fitur sinyal scalping akurat.
 
             ### 📱 File Unduhan:
             - 🔹 **File Versi**: `ScalpSignal-v${{ env.VERSION_NAME }}.apk`
+            - 🔹 **File Build**: `ScalpSignal-v${{ env.VERSION_NAME }}-b${{ github.run_number }}.apk`
             - ⚡ **File Terbaru**: `ScalpSignal-Latest.apk`
 
             ---
             * **Build Number**: `#${{ github.run_number }}`
             * **Commit SHA**: `${{ github.sha }}`
+          make_latest: true
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fallback Release via GitHub CLI
+        if: steps.create_release.outcome == 'failure'
+        run: |
+          echo "Handling release via GitHub CLI fallback for immutable tag..."
+          gh release create "${{ env.TAG_NAME }}-build${{ github.run_number }}" build_output/*.apk \
+            --title "ScalpSignal App v${{ env.VERSION_NAME }} (Build #${{ github.run_number }})" \
+            --notes "Pembaruan ScalpSignal v${{ env.VERSION_NAME }} Build #${{ github.run_number }}" \
+            --latest || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
