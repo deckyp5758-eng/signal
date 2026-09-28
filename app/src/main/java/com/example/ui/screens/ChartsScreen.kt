@@ -2080,7 +2080,76 @@ fun CandlestickChart(
         }
 
         // ==========================================
-        // 10. FLOATING ZOOM & SCROLL CONTROLS OVERLAY
+        // 10. TOP OHLC HUD & BROKER FEED BADGE OVERLAY
+        // ==========================================
+        val activeCandle = if (selectedCandleIndex != null && selectedCandleIndex in candles.indices) {
+            candles[selectedCandleIndex]
+        } else if (visibleCandles.isNotEmpty()) {
+            visibleCandles.last()
+        } else {
+            candles.lastOrNull()
+        }
+
+        if (activeCandle != null) {
+            val candleChange = activeCandle.close - activeCandle.open
+            val isGreen = candleChange >= 0
+            val changePct = if (activeCandle.open > 0) (candleChange / activeCandle.open) * 100.0 else 0.0
+
+            Surface(
+                shape = RoundedCornerShape(bottomEnd = 8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .testTag("chart_ohlc_hud")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "OANDA/FOREXCOM",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = GoldPrimary
+                    )
+                    Text(
+                        text = "O:${instrument.formatPrice(activeCandle.open)}",
+                        fontSize = 9.sp,
+                        color = TextSecondary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                    Text(
+                        text = "H:${instrument.formatPrice(activeCandle.high)}",
+                        fontSize = 9.sp,
+                        color = TextSecondary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                    Text(
+                        text = "L:${instrument.formatPrice(activeCandle.low)}",
+                        fontSize = 9.sp,
+                        color = TextSecondary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                    Text(
+                        text = "C:${instrument.formatPrice(activeCandle.close)}",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isGreen) BuyGreen else SellRed,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                    Text(
+                        text = String.format(Locale.US, "%+.2f%%", changePct),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isGreen) BuyGreen else SellRed
+                    )
+                }
+            }
+        }
+
+        // ==========================================
+        // 11. FLOATING ZOOM & SCROLL CONTROLS OVERLAY
         // ==========================================
         Row(
             modifier = Modifier

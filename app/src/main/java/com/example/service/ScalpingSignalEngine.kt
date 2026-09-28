@@ -42,10 +42,10 @@ class ScalpingSignalEngine(
     private val lastSignalAction = java.util.concurrent.ConcurrentHashMap<TradingInstrument, SignalAction>()
 
     // Current prices
-    private val _xauPrice = MutableStateFlow(4379.00)
+    private val _xauPrice = MutableStateFlow(3015.50)
     val xauPrice: StateFlow<Double> = _xauPrice.asStateFlow()
 
-    private val _eurPrice = MutableStateFlow(1.14834)
+    private val _eurPrice = MutableStateFlow(1.08540)
     val eurPrice: StateFlow<Double> = _eurPrice.asStateFlow()
 
     private val _brokerOffsetXau = MutableStateFlow(0.0)
@@ -63,10 +63,10 @@ class ScalpingSignalEngine(
     val eurChangePct: StateFlow<Double> = _eurChangePct.asStateFlow()
 
     // High / Low 24h
-    val xauHigh = 4399.58
-    val xauLow = 4334.02
-    val eurHigh = 1.14913
-    val eurLow = 1.14544
+    val xauHigh = 3032.50
+    val xauLow = 2998.20
+    val eurHigh = 1.08920
+    val eurLow = 1.08150
 
     // Thread-safe immutable candle series per instrument and timeframe
     private val candleMap = java.util.concurrent.ConcurrentHashMap<Pair<TradingInstrument, Timeframe>, List<Candle>>()
@@ -121,7 +121,7 @@ class ScalpingSignalEngine(
         if (isSimulating) return
         isSimulating = true
 
-        // Initial live price fetch in background
+        // Initial live price fetch and candle synchronization in background
         scope.launch(Dispatchers.IO) {
             try {
                 val initQuote = liveMarketService.fetchLivePrices()
@@ -136,6 +136,8 @@ class ScalpingSignalEngine(
                     updateLastCandle(TradingInstrument.EURUSD, initQuote.eurPrice)
                     updateIndicatorsForBoth()
                 }
+                // Fetch authentic broker OHLC bars immediately
+                syncLiveCandles()
             } catch (_: Exception) {}
         }
 
@@ -281,12 +283,6 @@ class ScalpingSignalEngine(
             if (list.isNotEmpty()) {
                 val last = list.last()
                 val lastCandleSlotTime = (last.timestamp / intervalMs) * intervalMs
-
-                // Ignore extreme outlier ticks (>1.5% deviation) from third-party vendor mismatch
-                val diffRatio = abs(currentPrice - last.close) / last.close
-                if (diffRatio > 0.015) {
-                    continue
-                }
 
                 if (currentCandleSlotTime > lastCandleSlotTime) {
                     val newCandle = Candle(
