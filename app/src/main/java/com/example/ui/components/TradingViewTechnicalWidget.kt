@@ -47,7 +47,7 @@ fun TradingViewTechnicalWidget(
     var useNativeMeter by remember { mutableStateOf(true) }
     var selectedFeed by remember(instrument) {
         mutableStateOf(
-            if (instrument == TradingInstrument.XAUUSD) "BINANCE:PAXGUSDT" else "BINANCE:EURUSDT"
+            if (instrument == TradingInstrument.XAUUSD) "OANDA:XAUUSD" else "FX:EURUSD"
         )
     }
     var keyReload by remember { mutableIntStateOf(0) }
@@ -210,8 +210,8 @@ fun TradingViewTechnicalWidget(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (instrument == TradingInstrument.XAUUSD) {
                                 val feeds = listOf(
-                                    "BINANCE:PAXGUSDT" to "Binance Spot",
-                                    "OANDA:XAUUSD" to "OANDA Forex"
+                                    "OANDA:XAUUSD" to "OANDA Forex",
+                                    "FOREXCOM:XAUUSD" to "FOREX.com"
                                 )
                                 feeds.forEach { (sym, label) ->
                                     val isSel = selectedFeed == sym
@@ -234,8 +234,8 @@ fun TradingViewTechnicalWidget(
                                 }
                             } else {
                                 val feeds = listOf(
-                                    "BINANCE:EURUSDT" to "Binance Spot",
-                                    "FX:EURUSD" to "FX Interbank"
+                                    "FX:EURUSD" to "FX Interbank",
+                                    "OANDA:EURUSD" to "OANDA Forex"
                                 )
                                 feeds.forEach { (sym, label) ->
                                     val isSel = selectedFeed == sym
@@ -282,7 +282,7 @@ fun TradingViewTechnicalWidget(
                                     allowFileAccess = false
                                     loadWithOverviewMode = true
                                     useWideViewPort = true
-                                    cacheMode = WebSettings.LOAD_DEFAULT
+                                    cacheMode = WebSettings.LOAD_NO_CACHE
                                 }
                                 setBackgroundColor(AndroidColor.parseColor("#131722"))
                                 webViewClient = object : WebViewClient() {
@@ -300,7 +300,7 @@ fun TradingViewTechnicalWidget(
                                     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
                                         isLoading = false
                                         hasError = true
-                                        try { view?.destroy() } catch (_: Throwable) {}
+                                        useNativeMeter = true
                                         return true
                                     }
                                 }
@@ -317,6 +317,7 @@ fun TradingViewTechnicalWidget(
                         },
                         onRelease = { webView ->
                             try {
+                                (webView.parent as? ViewGroup)?.removeView(webView)
                                 webView.stopLoading()
                                 webView.destroy()
                             } catch (_: Throwable) {}

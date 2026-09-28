@@ -57,31 +57,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-    override fun onResume() {
-        super.onResume()
-        viewModel.setAppForeground(true)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        viewModel.setAppForeground(false)
-    }
 }
 
 @Composable
 fun MainAppScreen(viewModel: TradingViewModel) {
-    // Request POST_NOTIFICATIONS permission on Android 13+
+    val context = androidx.compose.ui.platform.LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         viewModel.toggleNotifications(isGranted)
-    }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -91,8 +75,6 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 viewModel.setAppForeground(true)
             } else if (event == Lifecycle.Event.ON_PAUSE) {
                 viewModel.setAppForeground(false)
-            } else if (event == Lifecycle.Event.ON_DESTROY) {
-                viewModel.engine.clearSessionOnAppClose()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -136,21 +118,6 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val currentPrice = if (selectedInstrument == TradingInstrument.XAUUSD) xauPrice else eurPrice
     val activeSignal = activeSignalsMap[selectedInstrument]
     val currentIndicators = indicatorsMap[selectedInstrument]
-    val candlesVersion by viewModel.engine.candlesVersion.collectAsStateWithLifecycle()
-    val chartCandles = remember(selectedInstrument, selectedTimeframe, candlesVersion, xauPrice, eurPrice) {
-        viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
-    }
-    val htfCandles = remember(selectedInstrument, candlesVersion, xauPrice, eurPrice) {
-        viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
-    }
-    val multiTimeframeTrends = remember(selectedInstrument, xauPrice, eurPrice) {
-        viewModel.getMultiTimeframeTrends(selectedInstrument)
-    }
-
-
-    val calculatedRisk = remember(riskInput, selectedInstrument, currentPrice) {
-        viewModel.calculateCurrentRisk()
-    }
 
     Scaffold(
         modifier = Modifier
@@ -163,7 +130,20 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     isLiveOnline = isLiveFeedOnline,
                     latencyMs = latencyMs,
                     marketSession = currentSession,
-                    onToggleNotifications = { viewModel.toggleNotifications(it) },
+                    onToggleNotifications = { enabled ->
+                        viewModel.toggleNotifications(enabled)
+                        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (!hasPerm) {
+                                try {
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    },
                     onManualScan = { viewModel.manualScan() }
                 )
 
@@ -324,6 +304,19 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     )
                 }
                 AppTab.CHARTS -> {
+                    androidx.activity.compose.BackHandler {
+                        viewModel.selectTab(AppTab.SIGNALS)
+                    }
+                    val candlesVersion by viewModel.engine.candlesVersion.collectAsStateWithLifecycle()
+                    val chartCandles = remember(selectedInstrument, selectedTimeframe, candlesVersion) {
+                        viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
+                    }
+                    val htfCandles = remember(selectedInstrument, candlesVersion) {
+                        viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
+                    }
+                    val multiTimeframeTrends = remember(selectedInstrument, candlesVersion) {
+                        viewModel.getMultiTimeframeTrends(selectedInstrument)
+                    }
                     ChartsScreen(
                         instrument = selectedInstrument,
                         currentPrice = currentPrice,
@@ -353,9 +346,6 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                             val slPips = if (pattern.suggestedStopLoss > 0) {
                                 selectedInstrument.pipsBetween(entry, pattern.suggestedStopLoss).toInt().coerceAtLeast(10).toString()
                             } else "20"
-                            val tpPips = if (pattern.suggestedTakeProfit > 0) {
-                                selectedInstrument.pipsBetween(entry, pattern.suggestedTakeProfit).toInt().coerceAtLeast(20).toString()
-                            } else "40"
 
                             viewModel.updateRiskInput { current ->
                                 current.copy(
@@ -374,6 +364,9 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     )
                 }
                 AppTab.CALENDAR -> {
+                    androidx.activity.compose.BackHandler {
+                        viewModel.selectTab(AppTab.SIGNALS)
+                    }
                     CalendarScreen(
                         events = calendarEvents,
                         newsShield = newsShield,
@@ -382,6 +375,12 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     )
                 }
                 AppTab.RISK_MANAGER -> {
+                    androidx.activity.compose.BackHandler {
+                        viewModel.selectTab(AppTab.SIGNALS)
+                    }
+                    val calculatedRisk = remember(riskInput, selectedInstrument, currentPrice) {
+                        viewModel.calculateCurrentRisk()
+                    }
                     RiskManagerScreen(
                         selectedInstrument = selectedInstrument,
                         riskInput = riskInput,
@@ -395,9 +394,15 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     )
                 }
                 AppTab.DIAGNOSTICS -> {
+                    androidx.activity.compose.BackHandler {
+                        viewModel.selectTab(AppTab.SIGNALS)
+                    }
                     DiagnosticsScreen(viewModel = viewModel)
                 }
                 AppTab.TUTORIAL -> {
+                    androidx.activity.compose.BackHandler {
+                        viewModel.selectTab(AppTab.SIGNALS)
+                    }
                     TutorialScreen(
                         updateState = updateState,
                         repoOwner = githubRepoOwner,

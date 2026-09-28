@@ -40,7 +40,6 @@ import com.example.data.model.TradingInstrument
 import com.example.ui.theme.*
 
 enum class ChartFeedSource(val displayName: String, val tvSymbol: String) {
-    BINANCE("Binance Institutional (Cocok 100% dgn Analisis)", "BINANCE:PAXGUSDT"),
     OANDA("OANDA (Interbank MetaTrader Feed)", "OANDA:XAUUSD"),
     FOREX_COM("FOREX.com (ECN Broker Feed)", "FOREXCOM:XAUUSD"),
     CAPITAL_COM("Capital.com (Broker Gold Spot)", "CAPITALCOM:XAUUSD"),
@@ -54,9 +53,10 @@ fun WebChartTerminal(
     timeframe: Timeframe,
     detectedPatterns: List<DetectedPattern> = emptyList(),
     onApplyPatternToRisk: (DetectedPattern) -> Unit = {},
+    onSwitchToNative: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.BINANCE) }
+    var selectedFeedSource by remember { mutableStateOf(ChartFeedSource.OANDA) }
     var keyReload by remember { mutableIntStateOf(0) }
     var lastLoadedContent by remember { mutableStateOf("") }
     var isChartLoading by remember { mutableStateOf(true) }
@@ -65,7 +65,7 @@ fun WebChartTerminal(
     val rawSymbol = if (instrument == TradingInstrument.XAUUSD) {
         selectedFeedSource.tvSymbol
     } else {
-        "BINANCE:EURUSDT"
+        "OANDA:EURUSD"
     }
 
     val intervalStr = when (timeframe) {
@@ -204,7 +204,7 @@ fun WebChartTerminal(
                             allowFileAccess = false
                             loadWithOverviewMode = true
                             useWideViewPort = true
-                            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
                         }
                         setBackgroundColor(android.graphics.Color.parseColor("#12151e"))
                         webViewClient = object : WebViewClient() {
@@ -231,9 +231,7 @@ fun WebChartTerminal(
                                 // CRITICAL: returning true prevents Chromium from killing the host app
                                 isChartLoading = false
                                 hasLoadingError = true
-                                try {
-                                    view?.destroy()
-                                } catch (_: Throwable) {}
+                                onSwitchToNative()
                                 return true
                             }
                         }
@@ -250,6 +248,7 @@ fun WebChartTerminal(
                 },
                 onRelease = { webView ->
                     try {
+                        (webView.parent as? ViewGroup)?.removeView(webView)
                         webView.stopLoading()
                         webView.destroy()
                     } catch (_: Throwable) {}
@@ -310,6 +309,15 @@ fun WebChartTerminal(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
+                            Button(
+                                onClick = {
+                                    onSwitchToNative()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanEma)
+                            ) {
+                                Text("Ganti ke Grafik Native", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
                             Button(
                                 onClick = {
                                     keyReload++

@@ -564,6 +564,7 @@ fun ChartsScreen(
                                     timeframe = timeframe,
                                     detectedPatterns = allDetectedPatterns,
                                     onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
+                                    onSwitchToNative = { useTradingViewWeb = false },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }

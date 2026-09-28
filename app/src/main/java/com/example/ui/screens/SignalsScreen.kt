@@ -391,7 +391,7 @@ fun TradingViewFeedHeaderCard(
     currentPrice: Double,
     onScanMarket: () -> Unit
 ) {
-    val symbolSource = if (instrument == TradingInstrument.XAUUSD) "BINANCE:PAXGUSDT" else "BINANCE:EURUSDT"
+    val symbolSource = if (instrument == TradingInstrument.XAUUSD) "OANDA:XAUUSD" else "OANDA:EURUSD"
     
     Card(
         shape = RoundedCornerShape(14.dp),

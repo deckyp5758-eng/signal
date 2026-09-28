@@ -38,8 +38,8 @@ class ScalpingSignalEngine(
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
 
     // Anti-spam cooldown tracking (instrument -> timestamp)
-    private val lastSignalTime = mutableMapOf<TradingInstrument, Long>()
-    private val lastSignalAction = mutableMapOf<TradingInstrument, SignalAction>()
+    private val lastSignalTime = java.util.concurrent.ConcurrentHashMap<TradingInstrument, Long>()
+    private val lastSignalAction = java.util.concurrent.ConcurrentHashMap<TradingInstrument, SignalAction>()
 
     // Current prices
     private val _xauPrice = MutableStateFlow(4379.00)
@@ -68,8 +68,9 @@ class ScalpingSignalEngine(
     val eurHigh = 1.14913
     val eurLow = 1.14544
 
-    // Candle series per instrument and timeframe
-    private val candleMap = mutableMapOf<Pair<TradingInstrument, Timeframe>, MutableList<Candle>>()
+    // Thread-safe immutable candle series per instrument and timeframe
+    private val candleMap = java.util.concurrent.ConcurrentHashMap<Pair<TradingInstrument, Timeframe>, List<Candle>>()
+    private val isSyncingCandles = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // Latest indicators
     private val _indicators = MutableStateFlow<Map<TradingInstrument, IndicatorValues>>(emptyMap())
@@ -97,26 +98,30 @@ class ScalpingSignalEngine(
     private var job: Job? = null
 
     init {
-        scope.launch(Dispatchers.IO) {
-            syncLiveCandles()
-            try {
-                val quote = liveMarketService.fetchLivePrices()
-                if (quote != null && quote.isLiveOnline) {
-                    _xauPrice.value = quote.xauPrice
-                    _eurPrice.value = quote.eurPrice
-                    _isLiveFeedOnline.value = true
-                    _lastSyncTime.value = quote.timestamp
-                }
-            } catch (_: Exception) {}
-        }
+        // Seed initial candles, indicators, and signals immediately so UI never blocks or spins on launch
+        seedInitialCandlesSync()
         startTickEngine()
+    }
+
+    private fun seedInitialCandlesSync() {
+        val initXau = _xauPrice.value
+        val initEur = _eurPrice.value
+        for (tf in Timeframe.values()) {
+            candleMap[Pair(TradingInstrument.XAUUSD, tf)] =
+                liveMarketService.generateCandlesSync(TradingInstrument.XAUUSD, tf, initXau)
+            candleMap[Pair(TradingInstrument.EURUSD, tf)] =
+                liveMarketService.generateCandlesSync(TradingInstrument.EURUSD, tf, initEur)
+        }
+        _candlesVersion.value = System.currentTimeMillis()
+        updateIndicatorsForBoth()
+        evaluateAutoSignals(forceNew = false, silentInit = true)
     }
 
     fun startTickEngine() {
         if (isSimulating) return
         isSimulating = true
 
-        // Initial live candle & price fetch
+        // Initial live price fetch in background
         scope.launch(Dispatchers.IO) {
             try {
                 val initQuote = liveMarketService.fetchLivePrices()
@@ -127,17 +132,19 @@ class ScalpingSignalEngine(
                     _lastSyncTime.value = initQuote.timestamp
                     _latencyMs.value = initQuote.latencyMs
                     _currentSession.value = MarketSessionHelper.getCurrentSession()
+                    updateLastCandle(TradingInstrument.XAUUSD, initQuote.xauPrice)
+                    updateLastCandle(TradingInstrument.EURUSD, initQuote.eurPrice)
+                    updateIndicatorsForBoth()
                 }
             } catch (_: Exception) {}
-            syncLiveCandles()
         }
 
         job = scope.launch(Dispatchers.Default) {
             var tickCounter = 0
             var consecutiveFailures = 0
             while (isActive) {
-                // High-speed real-time polling: 1.2s in foreground, 12s in background
-                val pollDelay = if (_isForeground.value) 1200L else 12000L
+                // Smooth real-time polling: 2.5s in foreground, 12s in background
+                val pollDelay = if (_isForeground.value) 2500L else 12000L
                 delay(pollDelay)
                 tickCounter++
 
@@ -173,15 +180,15 @@ class ScalpingSignalEngine(
                     updateIndicatorsForBoth()
                 }
 
-                // Automatic sync of live historical candle bars every ~18 seconds
-                if (tickCounter % 15 == 0 && _isForeground.value) {
-                    scope.launch(Dispatchers.IO) {
+                // Automatic sync of live historical candle bars every ~35 seconds
+                if (tickCounter % 14 == 0 && _isForeground.value) {
+                    scope.launch(Dispatchers.Default) {
                         syncLiveCandles()
                     }
                 }
 
-                // Automatically evaluate signals every ~10 seconds
-                if (tickCounter % 8 == 0) {
+                // Automatically evaluate signals every ~15 seconds
+                if (tickCounter % 6 == 0) {
                     evaluateAutoSignals()
                 }
             }
@@ -189,8 +196,9 @@ class ScalpingSignalEngine(
     }
 
     fun setAppForeground(inForeground: Boolean) {
+        val changed = _isForeground.value != inForeground
         _isForeground.value = inForeground
-        if (inForeground) {
+        if (inForeground && changed) {
             scope.launch(Dispatchers.IO) {
                 try {
                     val quote = liveMarketService.fetchLivePrices()
@@ -200,8 +208,9 @@ class ScalpingSignalEngine(
                         _isLiveFeedOnline.value = true
                         _lastSyncTime.value = quote.timestamp
                         _latencyMs.value = quote.latencyMs
+                        updateLastCandle(TradingInstrument.XAUUSD, quote.xauPrice)
+                        updateLastCandle(TradingInstrument.EURUSD, quote.eurPrice)
                     }
-                    syncLiveCandles()
                 } catch (_: Exception) {}
             }
         }
@@ -217,11 +226,6 @@ class ScalpingSignalEngine(
     }
 
     fun clearSessionOnAppClose() {
-        candleMap.clear()
-        _activeSignals.value = mapOf(
-            TradingInstrument.XAUUSD to null,
-            TradingInstrument.EURUSD to null
-        )
         scope.launch(Dispatchers.IO) {
             try {
                 signalDao.clearAllSignals()
@@ -240,88 +244,37 @@ class ScalpingSignalEngine(
     }
 
     private suspend fun syncLiveCandles() {
+        if (!isSyncingCandles.compareAndSet(false, true)) return
         try {
             val currentXau = _xauPrice.value
             val currentEur = _eurPrice.value
 
-            // 1. Instant Priority Fetch for Core Scalping Timeframe (M5) -> 100% Data Riil Online
-            coroutineScope {
-                launch(Dispatchers.IO) {
-                    val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, Timeframe.M5, currentXau)
-                    val xauKey = Pair(TradingInstrument.XAUUSD, Timeframe.M5)
-                    if (!xauCandles.isNullOrEmpty()) {
-                        val mutableXau = xauCandles.toMutableList()
-                        if (currentXau > 0.0) {
-                            val lastIdx = mutableXau.lastIndex
-                            val last = mutableXau[lastIdx]
-                            val diffRatio = abs(currentXau - last.close) / last.close
-                            if (diffRatio < 0.015) {
-                                mutableXau[lastIdx] = last.copy(
-                                    close = currentXau,
-                                    high = maxOf(last.high, currentXau),
-                                    low = minOf(last.low, currentXau)
-                                )
-                            }
-                        }
-                        candleMap[xauKey] = mutableXau
-                        _candlesVersion.value = System.currentTimeMillis()
-                    }
+            for (tf in Timeframe.values()) {
+                val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
+                if (!xauCandles.isNullOrEmpty()) {
+                    candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toList()
                 }
-
-                launch(Dispatchers.IO) {
-                    val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, Timeframe.M5, currentEur)
-                    val eurKey = Pair(TradingInstrument.EURUSD, Timeframe.M5)
-                    if (!eurCandles.isNullOrEmpty()) {
-                        val mutableEur = eurCandles.toMutableList()
-                        if (currentEur > 0.0) {
-                            val lastIdx = mutableEur.lastIndex
-                            val last = mutableEur[lastIdx]
-                            val diffRatio = abs(currentEur - last.close) / last.close
-                            if (diffRatio < 0.015) {
-                                mutableEur[lastIdx] = last.copy(
-                                    close = currentEur,
-                                    high = maxOf(last.high, currentEur),
-                                    low = minOf(last.low, currentEur)
-                                )
-                            }
-                        }
-                        candleMap[eurKey] = mutableEur
-                        _candlesVersion.value = System.currentTimeMillis()
-                    }
+                val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
+                if (!eurCandles.isNullOrEmpty()) {
+                    candleMap[Pair(TradingInstrument.EURUSD, tf)] = eurCandles.toList()
                 }
             }
-
-            // Immediately post indicators and signals for M5 so chart and signals display instantly (<100ms)
-            withContext(Dispatchers.Main) {
-                updateIndicatorsForBoth()
-                evaluateAutoSignals(forceNew = false)
-            }
-
-            // 2. Background Fetch for remaining timeframes (M1, M15, M30, H1)
-            val otherTimeframes = Timeframe.values().filter { it != Timeframe.M5 }
-            for (tf in otherTimeframes) {
-                scope.launch(Dispatchers.IO) {
-                    val xauCandles = liveMarketService.fetchLiveCandles(TradingInstrument.XAUUSD, tf, currentXau)
-                    if (!xauCandles.isNullOrEmpty()) {
-                        candleMap[Pair(TradingInstrument.XAUUSD, tf)] = xauCandles.toMutableList()
-                        _candlesVersion.value = System.currentTimeMillis()
-                    }
-                    val eurCandles = liveMarketService.fetchLiveCandles(TradingInstrument.EURUSD, tf, currentEur)
-                    if (!eurCandles.isNullOrEmpty()) {
-                        candleMap[Pair(TradingInstrument.EURUSD, tf)] = eurCandles.toMutableList()
-                        _candlesVersion.value = System.currentTimeMillis()
-                    }
-                }
-            }
-        } catch (e: Exception) {
+            _candlesVersion.value = System.currentTimeMillis()
+            updateIndicatorsForBoth()
+            evaluateAutoSignals(forceNew = false)
+        } catch (_: Exception) {
             // Keep existing candle map
+        } finally {
+            isSyncingCandles.set(false)
         }
     }
 
     private fun updateLastCandle(instrument: TradingInstrument, currentPrice: Double) {
         val now = System.currentTimeMillis()
         for (tf in Timeframe.values()) {
-            val list = candleMap[Pair(instrument, tf)] ?: continue
+            val key = Pair(instrument, tf)
+            val existing = candleMap[key] ?: continue
+            val list = existing.toMutableList()
             val intervalMs = tf.seconds * 1000L
             val currentCandleSlotTime = (now / intervalMs) * intervalMs
 
@@ -336,9 +289,6 @@ class ScalpingSignalEngine(
                 }
 
                 if (currentCandleSlotTime > lastCandleSlotTime) {
-                    // New candle period started (e.g. new minute :00, or :05, :15, :30, :00)
-                    // The previous candle is finalized at its last close.
-                    // A fresh candle opens at current tick price.
                     val newCandle = Candle(
                         timestamp = currentCandleSlotTime,
                         open = currentPrice,
@@ -348,12 +298,10 @@ class ScalpingSignalEngine(
                         volume = 1.0
                     )
                     list.add(newCandle)
-                    // Keep list bounded to last 120 candles for optimal performance
                     if (list.size > 120) {
                         list.removeAt(0)
                     }
                 } else {
-                    // Within the same candle period: update High, Low, Close, and tick volume
                     val updated = last.copy(
                         high = maxOf(last.high, currentPrice),
                         low = minOf(last.low, currentPrice),
@@ -363,7 +311,6 @@ class ScalpingSignalEngine(
                     list[list.size - 1] = updated
                 }
             } else {
-                // Initialize first candle if empty
                 list.add(
                     Candle(
                         timestamp = currentCandleSlotTime,
@@ -375,6 +322,7 @@ class ScalpingSignalEngine(
                     )
                 )
             }
+            candleMap[key] = list.toList()
         }
         _candlesVersion.value = System.currentTimeMillis()
     }
@@ -391,36 +339,24 @@ class ScalpingSignalEngine(
     fun getCandles(instrument: TradingInstrument, timeframe: Timeframe): List<Candle> {
         val key = Pair(instrument, timeframe)
         val existing = candleMap[key]
-        if (existing.isNullOrEmpty()) {
-            fetchTimeframeCandlesOnDemand(instrument, timeframe)
-            return emptyList()
+        if (!existing.isNullOrEmpty()) {
+            return existing
         }
-        return existing.toList()
+        val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
+        val generated = liveMarketService.generateCandlesSync(instrument, timeframe, livePrice)
+        candleMap[key] = generated
+        return generated
     }
 
     fun fetchTimeframeCandlesOnDemand(instrument: TradingInstrument, timeframe: Timeframe) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.Default) {
             try {
                 val livePrice = if (instrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
                 val fetched = liveMarketService.fetchLiveCandles(instrument, timeframe, livePrice)
                 if (!fetched.isNullOrEmpty()) {
-                    val mutable = fetched.toMutableList()
-                    if (livePrice > 0.0 && mutable.isNotEmpty()) {
-                        val last = mutable.last()
-                        val diffRatio = abs(livePrice - last.close) / last.close
-                        if (diffRatio < 0.015) {
-                            mutable[mutable.lastIndex] = last.copy(
-                                close = livePrice,
-                                high = maxOf(last.high, livePrice),
-                                low = minOf(last.low, livePrice)
-                            )
-                        }
-                    }
-                    candleMap[Pair(instrument, timeframe)] = mutable
+                    candleMap[Pair(instrument, timeframe)] = fetched.toList()
                     _candlesVersion.value = System.currentTimeMillis()
-                    withContext(Dispatchers.Main) {
-                        updateIndicatorsForBoth()
-                    }
+                    updateIndicatorsForBoth()
                 }
             } catch (_: Exception) {}
         }
@@ -444,13 +380,17 @@ class ScalpingSignalEngine(
         }
     }
 
-    private fun evaluateAutoSignals(forceNew: Boolean = false) {
+    private fun evaluateAutoSignals(forceNew: Boolean = false, silentInit: Boolean = false) {
         for (targetInstrument in TradingInstrument.values()) {
-            evaluateSignalForSingleInstrument(targetInstrument, forceNew)
+            evaluateSignalForSingleInstrument(targetInstrument, forceNew, silentInit)
         }
     }
 
-    private fun evaluateSignalForSingleInstrument(targetInstrument: TradingInstrument, forceNew: Boolean = false) {
+    private fun evaluateSignalForSingleInstrument(
+        targetInstrument: TradingInstrument,
+        forceNew: Boolean = false,
+        silentInit: Boolean = false
+    ) {
         val candles = candleMap[Pair(targetInstrument, Timeframe.M5)] ?: return
         val ind = IndicatorCalculator.calculateIndicators(candles)
         val currentPrice = if (targetInstrument == TradingInstrument.XAUUSD) _xauPrice.value else _eurPrice.value
@@ -533,19 +473,25 @@ class ScalpingSignalEngine(
         currentMap[targetInstrument] = newSignal
         _activeSignals.value = currentMap
 
-        // Emit for in-app alert
-        scope.launch {
-            _newSignalEvent.emit(newSignal)
-        }
+        if (!silentInit) {
+            // Emit for in-app alert
+            scope.launch {
+                _newSignalEvent.emit(newSignal)
+            }
 
-        // Post system notification if enabled
-        if (notificationsEnabled) {
-            notificationHelper.postSignalNotification(newSignal)
+            // Post system notification if enabled on background thread
+            if (notificationsEnabled) {
+                scope.launch(Dispatchers.IO) {
+                    notificationHelper.postSignalNotification(newSignal)
+                }
+            }
         }
 
         // Save to Room DB
         scope.launch(Dispatchers.IO) {
-            signalDao.insertSignal(signalToEntity(newSignal))
+            try {
+                signalDao.insertSignal(signalToEntity(newSignal))
+            } catch (_: Exception) {}
         }
     }
 
