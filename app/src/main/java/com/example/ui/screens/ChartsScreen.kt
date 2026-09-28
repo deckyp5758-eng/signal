@@ -3,7 +3,9 @@ package com.example.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -44,10 +46,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.*
+import com.example.service.CandleNormalizer
 import com.example.service.IndicatorCalculator
 import com.example.service.PatternRecognitionEngine
 import com.example.ui.components.PatternSnapshotCard
-import com.example.ui.components.WebChartTerminal
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -78,6 +80,9 @@ fun ChartsScreen(
     htfCandles: List<Candle> = emptyList(),
     selectedGradeFilter: ConfluenceGrade? = null,
     filterOnlyHtfAligned: Boolean = false,
+    precomputedPatterns: List<DetectedPattern> = emptyList(),
+    precomputedEma9: List<Double> = emptyList(),
+    precomputedEma21: List<Double> = emptyList(),
     onSelectTimeframe: (Timeframe) -> Unit,
     onToggleEma: () -> Unit,
     onToggleBollinger: () -> Unit,
@@ -92,16 +97,23 @@ fun ChartsScreen(
     isScanning: Boolean = false,
     onRefreshScan: () -> Unit = {}
 ) {
-    var viewMode by remember { mutableStateOf(ChartViewMode.ANALISIS) }
+    var viewMode by remember { mutableStateOf(ChartViewMode.BROKER_WEB) }
     var selectedSnapshotPatternIndex by remember { mutableStateOf(0) }
     var showSpreadInfoDialog by remember { mutableStateOf(false) }
     var showConfluenceInfoDialog by remember { mutableStateOf(false) }
     var selectedCandleIndex by remember { mutableStateOf<Int?>(null) }
-    var useTradingViewWeb by remember { mutableStateOf(false) }
+    var focusMode by remember { mutableStateOf(false) }
+    var showIndicatorPanel by remember { mutableStateOf(false) }
+    var bottomTab by remember { mutableStateOf(0) }
 
     // Run Auto Pattern Recognition Engine with Confluence Grade & HTF Trend Analysis
-    val allDetectedPatterns = remember(candles, instrument, timeframe, htfCandles) {
-        PatternRecognitionEngine.detectAllPatterns(candles, instrument, timeframe, htfCandles)
+    // Uses pre-calculated results from background coroutine dispatcher (Dispatchers.Default) to prevent UI thread lag
+    val allDetectedPatterns = if (precomputedPatterns.isNotEmpty()) {
+        precomputedPatterns
+    } else {
+        remember(candles, instrument, timeframe, htfCandles) {
+            PatternRecognitionEngine.detectAllPatterns(candles, instrument, timeframe, htfCandles)
+        }
     }
 
     val filteredPatterns = remember(allDetectedPatterns, selectedPatternFilter, selectedGradeFilter, filterOnlyHtfAligned) {
@@ -112,7 +124,6 @@ fun ChartsScreen(
             matchCategory && matchGrade && matchHtfAligned
         }
     }
-
 
     // Determine spread condition
     val (spreadBadgeText, spreadBadgeColor, _) = when (instrument) {
@@ -132,7 +143,6 @@ fun ChartsScreen(
         }
     }
 
-    // Pola aktif untuk Mode 1 Snapshot Feed (Persis seperti contoh screenshot)
     val displaySnapshotPattern = remember(allDetectedPatterns, candles, indicators, currentPrice, timeframe, selectedSnapshotPatternIndex) {
         if (allDetectedPatterns.isNotEmpty()) {
             val safeIdx = selectedSnapshotPatternIndex.coerceIn(0, allDetectedPatterns.lastIndex)
@@ -167,9 +177,6 @@ fun ChartsScreen(
         }
     }
 
-    var showIndicatorPanel by remember { mutableStateOf(false) }
-    var bottomTab by remember { mutableStateOf(0) }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -177,107 +184,137 @@ fun ChartsScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // ============================================================
-        // 1. UNIFIED COMPACT TOP CONTROL TOOLBAR
+        // 1. STREAMLINED DISTRACTION-FREE SCALPING HEADER
         // ============================================================
         item {
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Row 1: Mode Switcher Tabs + Live Status Badge
+                    // Row 1: Symbol & Live Price + Spread Pill + Focus Mode & Terminal Switcher
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Mode Switcher Segmented Control
+                        // Instrument Badge + Live Price
                         Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                .padding(2.dp)
-                                .testTag("chart_mode_switcher")
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            ChartViewMode.values().forEach { mode ->
-                                val isSel = viewMode == mode
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (isSel) GoldPrimary else Color.Transparent,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { viewMode = mode }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = when (mode) {
-                                                ChartViewMode.ANALISIS -> Icons.Default.Analytics
-                                                ChartViewMode.BROKER_WEB -> Icons.Default.CandlestickChart
-                                            },
-                                            contentDescription = null,
-                                            tint = if (isSel) Color.Black else TextSecondary,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = mode.title,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = GoldPrimary.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = instrument.symbol,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = GoldPrimary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            Text(
+                                text = instrument.formatPrice(currentPrice),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = CyanEma,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+
+                            // Spread Badge
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = spreadBadgeColor.copy(alpha = 0.15f),
+                                modifier = Modifier.clickable { showSpreadInfoDialog = true }
+                            ) {
+                                Text(
+                                    text = "${instrument.defaultSpreadPips}p",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = spreadBadgeColor,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Live Status Dot
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(start = 2.dp)
+                        // Actions: Focus Mode Button + Mode Switcher + Live Status
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            // Focus Mode Button
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (focusMode) GoldPrimary else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .clickable { focusMode = !focusMode }
+                                    .testTag("toggle_focus_mode_button")
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isLiveOnline) BuyGreen else SellRed)
-                                )
-                                Text(
-                                    text = if (isLiveOnline) "Live" else "Offline",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isLiveOnline) BuyGreen else SellRed
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (focusMode) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                        contentDescription = "Mode Fokus Scalping",
+                                        tint = if (focusMode) Color.Black else TextSecondary,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = if (focusMode) "Fokus On" else "Fokus",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (focusMode) Color.Black else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            // Live Indicator Dot
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLiveOnline) BuyGreen else SellRed)
+                                    )
+                                    Text(
+                                        text = if (isLiveOnline) "Live" else "Off",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isLiveOnline) BuyGreen else SellRed
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // Row 2: Timeframe Bar + Quick Actions (Indikator Toggle & Rescan)
+                    // Row 2: Timeframe Bar + Essential Indicator Toggles
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // TimeframeSelector Pills
+                        // Timeframe Selector Pills
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
                             modifier = Modifier.testTag("timeframe_row")
                         ) {
                             Timeframe.values().forEach { tf ->
@@ -294,75 +331,105 @@ fun ChartsScreen(
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                     )
                                 }
                             }
                         }
 
+                        // Essential Scalper Indicators (EMA 9/21, Levels, SMC)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Expandable Indicator Panel Toggle Button
-                            if (viewMode == ChartViewMode.BROKER_WEB && !useTradingViewWeb) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (showIndicatorPanel) GoldPrimary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                                    border = BorderStroke(0.8.dp, if (showIndicatorPanel) GoldPrimary else Color.Transparent),
-                                    modifier = Modifier.clickable { showIndicatorPanel = !showIndicatorPanel }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tune,
-                                            contentDescription = "Indikator",
-                                            tint = if (showIndicatorPanel) GoldPrimary else TextSecondary,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Text(
-                                            text = "Indikator",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (showIndicatorPanel) GoldPrimary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Quick Rescan Icon Button
+                            // EMA Toggle
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = GoldPrimary.copy(alpha = 0.15f),
-                                border = BorderStroke(0.8.dp, GoldPrimary.copy(alpha = 0.4f)),
+                                color = if (showEma) CyanEma.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+                                border = if (showEma) BorderStroke(0.8.dp, CyanEma) else null,
                                 modifier = Modifier
-                                    .clickable(enabled = !isScanning) { onRefreshScan() }
-                                    .testTag("chart_quick_rescan_button")
+                                    .clickable { onToggleEma() }
+                                    .testTag("toggle_ema_chip")
+                            ) {
+                                Text(
+                                    text = "EMA",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (showEma) CyanEma else TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            // Levels Toggle
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (showLevels) GoldPrimary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+                                border = if (showLevels) BorderStroke(0.8.dp, GoldPrimary) else null,
+                                modifier = Modifier
+                                    .clickable { onToggleLevels() }
+                                    .testTag("toggle_levels_chip")
+                            ) {
+                                Text(
+                                    text = "S/R",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (showLevels) GoldPrimary else TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            // Patterns Toggle
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (showPatterns) BuyGreen.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+                                border = if (showPatterns) BorderStroke(0.8.dp, BuyGreen) else null,
+                                modifier = Modifier
+                                    .clickable { onTogglePatterns() }
+                                    .testTag("toggle_patterns_native_chip")
+                            ) {
+                                Text(
+                                    text = "SMC",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (showPatterns) BuyGreen else TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            // External TV Web Launcher Intent Button
+                            val context = LocalContext.current
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(0.8.dp, GoldPrimary.copy(alpha = 0.5f)),
+                                modifier = Modifier.clickable {
+                                    try {
+                                        val tvSymbol = if (instrument == TradingInstrument.XAUUSD) "OANDA:XAUUSD" else "OANDA:EURUSD"
+                                        val interval = when (timeframe) {
+                                            Timeframe.M1 -> "1"
+                                            Timeframe.M5 -> "5"
+                                            Timeframe.M15 -> "15"
+                                            Timeframe.M30 -> "30"
+                                            Timeframe.H1 -> "60"
+                                        }
+                                        val uri = Uri.parse("https://www.tradingview.com/chart/?symbol=${Uri.encode(tvSymbol)}&interval=$interval")
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                    } catch (_: Exception) {}
+                                }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    if (isScanning) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(11.dp),
-                                            strokeWidth = 1.5.dp,
-                                            color = GoldPrimary
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Sync,
-                                            contentDescription = "Scan Ulang",
-                                            tint = GoldPrimary,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.OpenInBrowser,
+                                        contentDescription = "Buka di TradingView",
+                                        tint = GoldPrimary,
+                                        modifier = Modifier.size(12.dp)
+                                    )
                                     Text(
-                                        text = if (isScanning) "..." else "Scan",
+                                        text = "TV Web",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = GoldPrimary
@@ -376,203 +443,47 @@ fun ChartsScreen(
         }
 
         // ============================================================
-        // 2. EXPANDABLE INDICATORS ROW (CLEAN COLLAPSIBLE PANEL)
+        // 2. MAIN CHART CONTENT AREA (EXPANDED IN FOCUS MODE)
         // ============================================================
-        if (viewMode == ChartViewMode.BROKER_WEB && !useTradingViewWeb) {
-            item {
-                AnimatedVisibility(
-                    visible = showIndicatorPanel,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, DarkBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    val chartHeight = if (focusMode) 520.dp else 420.dp
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp)
-                            .testTag("native_indicators_row")
+                            .height(chartHeight)
+                            .testTag("candlestick_chart_container")
                     ) {
-                        item {
-                            FilterChip(
-                                selected = showEma,
-                                onClick = onToggleEma,
-                                label = { Text("EMA 9/21", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = CyanEma.copy(alpha = 0.22f),
-                                    selectedLabelColor = CyanEma
-                                ),
-                                modifier = Modifier.testTag("toggle_ema_chip").height(28.dp)
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = showBollinger,
-                                onClick = onToggleBollinger,
-                                label = { Text("Bollinger (20,2)", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = PurpleMacd.copy(alpha = 0.22f),
-                                    selectedLabelColor = PurpleMacd
-                                ),
-                                modifier = Modifier.testTag("toggle_bollinger_chip").height(28.dp)
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = showLevels,
-                                onClick = onToggleLevels,
-                                label = { Text("S/R Kunci", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = GoldPrimary.copy(alpha = 0.22f),
-                                    selectedLabelColor = GoldPrimary
-                                ),
-                                modifier = Modifier.testTag("toggle_levels_chip").height(28.dp)
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = showPatterns,
-                                onClick = onTogglePatterns,
-                                label = { Text("Pola Target", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = BuyGreen.copy(alpha = 0.22f),
-                                    selectedLabelColor = BuyGreen
-                                ),
-                                modifier = Modifier.testTag("toggle_patterns_native_chip").height(28.dp)
-                            )
-                        }
+                        CandlestickChart(
+                            candles = candles,
+                            instrument = instrument,
+                            timeframe = timeframe,
+                            activeSignal = activeSignal,
+                            detectedPatterns = allDetectedPatterns,
+                            precomputedEma9 = precomputedEma9,
+                            precomputedEma21 = precomputedEma21,
+                            showEma = showEma,
+                            showBollinger = showBollinger,
+                            showLevels = showLevels,
+                            showPatterns = showPatterns,
+                            selectedCandleIndex = selectedCandleIndex,
+                            onCandleSelected = { selectedCandleIndex = it }
+                        )
                     }
                 }
             }
         }
 
         // ============================================================
-        // 3. MAIN CHART CONTENT AREA
+        // 3. SECONDARY DECKS (HIDDEN IN FOCUS MODE FOR ZERO DISTRACTION)
         // ============================================================
-        if (viewMode == ChartViewMode.BROKER_WEB) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, DarkBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // Chart Top Bar: Submode Switcher (Native vs Web) & Market Summary Overlay
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Sub-mode Switcher Pill
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .padding(2.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = if (!useTradingViewWeb) GoldPrimary else Color.Transparent,
-                                    modifier = Modifier
-                                        .clickable { useTradingViewWeb = false }
-                                        .testTag("submode_native_chart")
-                                ) {
-                                    Text(
-                                        text = "Native 60 FPS",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (!useTradingViewWeb) Color.Black else TextSecondary,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = if (useTradingViewWeb) GoldPrimary else Color.Transparent,
-                                    modifier = Modifier
-                                        .clickable { useTradingViewWeb = true }
-                                        .testTag("submode_tradingview_web")
-                                ) {
-                                    Text(
-                                        text = "TradingView",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (useTradingViewWeb) Color.Black else TextSecondary,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
-                                }
-                            }
-
-                            // Market Quick Stats Overlay: Price & Spread
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "Spread: ${instrument.defaultSpreadPips}p",
-                                    fontSize = 10.sp,
-                                    color = TextSecondary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = CyanEma.copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        text = instrument.formatPrice(currentPrice),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = CyanEma,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Chart Body
-                        if (!useTradingViewWeb) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(410.dp)
-                                    .testTag("candlestick_chart_container")
-                            ) {
-                                CandlestickChart(
-                                    candles = candles,
-                                    instrument = instrument,
-                                    timeframe = timeframe,
-                                    activeSignal = activeSignal,
-                                    detectedPatterns = allDetectedPatterns,
-                                    showEma = showEma,
-                                    showBollinger = showBollinger,
-                                    showLevels = showLevels,
-                                    showPatterns = showPatterns,
-                                    selectedCandleIndex = selectedCandleIndex,
-                                    onCandleSelected = { selectedCandleIndex = it }
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(520.dp)
-                            ) {
-                                WebChartTerminal(
-                                    instrument = instrument,
-                                    timeframe = timeframe,
-                                    detectedPatterns = allDetectedPatterns,
-                                    onApplyPatternToRisk = { pattern -> onApplyPatternToRisk(pattern) },
-                                    onSwitchToNative = { useTradingViewWeb = false },
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
+        if (!focusMode) {
             // Inspected Candle Detail Bar
             item {
                 if (selectedCandleIndex != null && selectedCandleIndex!! in candles.indices) {
@@ -615,439 +526,393 @@ fun ChartsScreen(
                     }
                 }
             }
-        } else {
-            // MODE ANALISIS SNAPSHOT
-            if (allDetectedPatterns.size > 1) {
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                    ) {
-                        items(allDetectedPatterns.size) { idx ->
-                            val pat = allDetectedPatterns[idx]
-                            val isSel = selectedSnapshotPatternIndex == idx
-                            FilterChip(
-                                selected = isSel,
-                                onClick = { selectedSnapshotPatternIndex = idx },
-                                label = {
-                                    Text(
-                                        text = "${pat.name} (${pat.confluenceGrade.code})",
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = GoldPrimary.copy(alpha = 0.25f),
-                                    selectedLabelColor = GoldPrimary
-                                ),
-                                modifier = Modifier.height(28.dp)
-                            )
-                        }
-                    }
-                }
-            }
 
+            // 4. CLEAN BOTTOM SEGMENTED TAB SWITCHER & DECK
             item {
-                PatternSnapshotCard(
-                    pattern = displaySnapshotPattern,
-                    candles = candles,
-                    instrument = instrument,
-                    timeframe = timeframe,
-                    currentPrice = currentPrice,
-                    indicators = indicators,
-                    onApplyToChart = { viewMode = ChartViewMode.BROKER_WEB },
-                    onApplyToRisk = { onApplyPatternToRisk(displaySnapshotPattern) }
-                )
-            }
-        }
-
-        // ============================================================
-        // 4. CLEAN BOTTOM SEGMENTED TAB SWITCHER
-        // ============================================================
-        item {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(3.dp).fillMaxWidth()
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 ) {
-                    val tabs = listOf(
-                        "📊 Scanner Pola (${filteredPatterns.size})",
-                        "📈 Tren MTF & Stat"
-                    )
-                    tabs.forEachIndexed { index, title ->
-                        val isSel = bottomTab == index
-                        Surface(
-                            shape = RoundedCornerShape(7.dp),
-                            color = if (isSel) GoldPrimary else Color.Transparent,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { bottomTab = index }
-                        ) {
-                            Text(
-                                text = title,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 7.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ============================================================
-        // 5. BOTTOM TAB CONTENT
-        // ============================================================
-        if (bottomTab == 0) {
-            // TAB 0: SCANNER POLA & CONFLUENCE
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Filter Row 1: Confluence Grade Pills
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(3.dp).fillMaxWidth()
                     ) {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            item {
-                                val isAll = selectedGradeFilter == null
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isAll) GoldPrimary else MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.clickable { onSelectGradeFilter(null) }
-                                ) {
-                                    Text(
-                                        text = "Semua Grade",
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isAll) Color.Black else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                            items(ConfluenceGrade.values()) { grade ->
-                                val isSelected = grade == selectedGradeFilter
-                                val (chipColor, chipBorder) = when (grade) {
-                                    ConfluenceGrade.A_PLUS -> GoldPrimary to GoldPrimary
-                                    ConfluenceGrade.A -> CyanEma to CyanEma
-                                    ConfluenceGrade.B -> OrangeEma to OrangeEma
-                                }
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isSelected) chipColor else MaterialTheme.colorScheme.surfaceVariant,
-                                    border = BorderStroke(1.dp, if (isSelected) chipBorder else Color.Transparent),
-                                    modifier = Modifier.clickable { onSelectGradeFilter(grade) }
-                                ) {
-                                    Text(
-                                        text = grade.badgeTitle,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { showConfluenceInfoDialog = true },
-                            modifier = Modifier.size(24.dp).testTag("confluence_info_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Panduan Confluence Rating",
-                                tint = GoldPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-
-                    // Filter Row 2: Category Pills
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(PatternTypeCategory.values()) { cat ->
-                            val isSelected = cat == selectedPatternFilter
+                        val tabs = listOf(
+                            "📊 Scanner Pola (${filteredPatterns.size})",
+                            "📈 Tren MTF & Stat"
+                        )
+                        tabs.forEachIndexed { index, title ->
+                            val isSel = bottomTab == index
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-                                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                                modifier = Modifier.clickable { onSelectPatternFilter(cat) }
+                                shape = RoundedCornerShape(7.dp),
+                                color = if (isSel) GoldPrimary else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { bottomTab = index }
                             ) {
                                 Text(
-                                    text = cat.label,
-                                    fontSize = 10.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    text = title,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 7.dp)
                                 )
                             }
                         }
                     }
-
-                    // HTF Filter Chip & Active Patterns Count
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = GoldPrimary.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, GoldPrimary)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Verified,
-                                        contentDescription = null,
-                                        tint = GoldPrimary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "Akurasi > 85% (Tertinggi First)",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = GoldPrimary
-                                    )
-                                }
-                            }
-
-                            FilterChip(
-                                selected = filterOnlyHtfAligned,
-                                onClick = onToggleHtfAlignedFilter,
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (filterOnlyHtfAligned) Icons.Default.CheckCircle else Icons.Default.FilterAlt,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = "Tren HTF",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = BuyGreen.copy(alpha = 0.2f),
-                                    selectedLabelColor = BuyGreen,
-                                    selectedLeadingIconColor = BuyGreen
-                                ),
-                                modifier = Modifier.testTag("filter_htf_aligned_chip").height(28.dp)
-                            )
-                        }
-
-                        Text(
-                            text = "${filteredPatterns.size} pola ditemukan",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextSecondary
-                        )
-                    }
                 }
             }
 
-            if (filteredPatterns.isEmpty()) {
+            // ============================================================
+            // 5. BOTTOM TAB CONTENT
+            // ============================================================
+            if (bottomTab == 0) {
+                // TAB 0: SCANNER POLA & CONFLUENCE
                 item {
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Text(
-                                text = "Tidak ada pola terdeteksi untuk filter ini (${timeframe.code})",
-                                fontSize = 11.sp,
-                                color = TextSecondary
-                            )
-                        }
-                    }
-                }
-            } else {
-                items(filteredPatterns, key = { it.id }) { pattern ->
-                    PatternDetailCard(
-                        pattern = pattern,
-                        instrument = instrument,
-                        onApplyToRisk = { onApplyPatternToRisk(pattern) }
-                    )
-                }
-            }
-        } else {
-            // TAB 1: TREN MTF & STATISTIK PASAR
-            item {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth().testTag("mtf_trend_matrix_card")
-                ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Filter Row 1: Confluence Grade Pills
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Matriks Tren Multi-Timeframe (MTF)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = GoldPrimary.copy(alpha = 0.15f)
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(
-                                    text = "Konfirmasi 1H / 15M",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GoldPrimary,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                item {
+                                    val isAll = selectedGradeFilter == null
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isAll) GoldPrimary else MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.clickable { onSelectGradeFilter(null) }
+                                    ) {
+                                        Text(
+                                            text = "Semua Grade",
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isAll) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                                items(ConfluenceGrade.values()) { grade ->
+                                    val isSelected = grade == selectedGradeFilter
+                                    val (chipColor, chipBorder) = when (grade) {
+                                        ConfluenceGrade.A_PLUS -> GoldPrimary to GoldPrimary
+                                        ConfluenceGrade.A -> CyanEma to CyanEma
+                                        ConfluenceGrade.B -> OrangeEma to OrangeEma
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) chipColor else MaterialTheme.colorScheme.surfaceVariant,
+                                        border = BorderStroke(1.dp, if (isSelected) chipBorder else Color.Transparent),
+                                        modifier = Modifier.clickable { onSelectGradeFilter(grade) }
+                                    ) {
+                                        Text(
+                                            text = grade.badgeTitle,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { showConfluenceInfoDialog = true },
+                                modifier = Modifier.size(24.dp).testTag("confluence_info_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Panduan Confluence Rating",
+                                    tint = GoldPrimary,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
 
+                        // Filter Row 2: Category Pills
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(PatternTypeCategory.values()) { cat ->
+                                val isSelected = cat == selectedPatternFilter
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                                    modifier = Modifier.clickable { onSelectPatternFilter(cat) }
+                                ) {
+                                    Text(
+                                        text = cat.label,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // HTF Filter Chip & Active Patterns Count
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            listOf(Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1).forEach { tf ->
-                                val trend = multiTimeframeTrends[tf] ?: TrendDirection.NEUTRAL
-                                val (bg, txt, icon) = when (trend) {
-                                    TrendDirection.BULLISH -> Triple(BuyGreen.copy(alpha = 0.15f), BuyGreen, Icons.Default.TrendingUp)
-                                    TrendDirection.BEARISH -> Triple(SellRed.copy(alpha = 0.15f), SellRed, Icons.Default.TrendingDown)
-                                    TrendDirection.NEUTRAL -> Triple(MaterialTheme.colorScheme.surfaceVariant, TextSecondary, Icons.Default.TrendingFlat)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = GoldPrimary.copy(alpha = 0.2f),
+                                    border = BorderStroke(1.dp, GoldPrimary)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Verified,
+                                            contentDescription = null,
+                                            tint = GoldPrimary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = "Akurasi > 85% (Tertinggi First)",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = GoldPrimary
+                                        )
+                                    }
                                 }
 
+                                FilterChip(
+                                    selected = filterOnlyHtfAligned,
+                                    onClick = onToggleHtfAlignedFilter,
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (filterOnlyHtfAligned) Icons.Default.CheckCircle else Icons.Default.FilterAlt,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "Tren HTF",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = BuyGreen.copy(alpha = 0.2f),
+                                        selectedLabelColor = BuyGreen,
+                                        selectedLeadingIconColor = BuyGreen
+                                    ),
+                                    modifier = Modifier.testTag("filter_htf_aligned_chip").height(28.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "${filteredPatterns.size} pola ditemukan",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                if (filteredPatterns.isEmpty()) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Text(
+                                    text = "Tidak ada pola terdeteksi untuk filter ini (${timeframe.code})",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(filteredPatterns, key = { it.id }) { pattern ->
+                        PatternDetailCard(
+                            pattern = pattern,
+                            instrument = instrument,
+                            onApplyToRisk = { onApplyPatternToRisk(pattern) }
+                        )
+                    }
+                }
+            } else {
+                // TAB 1: TREN MTF & STATISTIK PASAR
+                item {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().testTag("mtf_trend_matrix_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Matriks Tren Multi-Timeframe (MTF)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = bg,
-                                    modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = GoldPrimary.copy(alpha = 0.15f)
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.padding(vertical = 6.dp)
+                                    Text(
+                                        text = "Konfirmasi 1H / 15M",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = GoldPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                listOf(Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1).forEach { tf ->
+                                    val trend = multiTimeframeTrends[tf] ?: TrendDirection.NEUTRAL
+                                    val (bg, txt, icon) = when (trend) {
+                                        TrendDirection.BULLISH -> Triple(BuyGreen.copy(alpha = 0.15f), BuyGreen, Icons.Default.TrendingUp)
+                                        TrendDirection.BEARISH -> Triple(SellRed.copy(alpha = 0.15f), SellRed, Icons.Default.TrendingDown)
+                                        TrendDirection.NEUTRAL -> Triple(MaterialTheme.colorScheme.surfaceVariant, TextSecondary, Icons.Default.TrendingFlat)
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = bg,
+                                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
                                     ) {
-                                        Text(text = tf.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                        Icon(imageVector = icon, contentDescription = null, tint = txt, modifier = Modifier.size(14.dp))
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(vertical = 6.dp)
+                                        ) {
+                                            Text(text = tf.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                            Icon(imageVector = icon, contentDescription = null, tint = txt, modifier = Modifier.size(14.dp))
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            item {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                item {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { showSpreadInfoDialog = true }
-                                .padding(4.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Column(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showSpreadInfoDialog = true }
+                                    .padding(4.dp)
                             ) {
-                                Text(text = "Spread Pasar", fontSize = 11.sp, color = TextSecondary)
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = "Info Spread",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "${instrument.defaultSpreadPips} pips",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = spreadBadgeColor.copy(alpha = 0.18f),
-                                    border = BorderStroke(1.dp, spreadBadgeColor.copy(alpha = 0.5f))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Text(
-                                        text = spreadBadgeText,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = spreadBadgeColor,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    Text(text = "Spread Pasar", fontSize = 11.sp, color = TextSecondary)
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Info Spread",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "${instrument.defaultSpreadPips} pips",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = spreadBadgeColor.copy(alpha = 0.18f),
+                                        border = BorderStroke(1.dp, spreadBadgeColor.copy(alpha = 0.5f))
+                                    ) {
+                                        Text(
+                                            text = spreadBadgeText,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = spreadBadgeColor,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                             }
-                        }
 
-                        Column {
-                            Text(text = "Volatilitas ATR", fontSize = 11.sp, color = TextSecondary)
-                            val atrText = indicators?.let {
-                                "${"%.1f".format(it.atr / instrument.pipMultiplier)} pips"
-                            } ?: "15.0 pips"
-                            Text(
-                                text = atrText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = GoldPrimary
-                            )
-                        }
+                            Column {
+                                Text(text = "Volatilitas ATR", fontSize = 11.sp, color = TextSecondary)
+                                val atrText = indicators?.let {
+                                    "${"%.1f".format(it.atr / instrument.pipMultiplier)} pips"
+                                } ?: "15.0 pips"
+                                Text(
+                                    text = atrText,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GoldPrimary
+                                )
+                            }
 
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(text = "Harga Terakhir", fontSize = 11.sp, color = TextSecondary)
-                            Text(
-                                text = instrument.formatPrice(currentPrice),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CyanEma
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(text = "Harga Terakhir", fontSize = 11.sp, color = TextSecondary)
+                                Text(
+                                    text = instrument.formatPrice(currentPrice),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyanEma
+                                )
+                            }
                         }
                     }
                 }
@@ -1552,6 +1417,8 @@ fun CandlestickChart(
     timeframe: Timeframe = Timeframe.M1,
     activeSignal: ScalpSignal?,
     detectedPatterns: List<DetectedPattern> = emptyList(),
+    precomputedEma9: List<Double> = emptyList(),
+    precomputedEma21: List<Double> = emptyList(),
     showEma: Boolean,
     showBollinger: Boolean,
     showLevels: Boolean,
@@ -1560,8 +1427,8 @@ fun CandlestickChart(
     onCandleSelected: (Int?) -> Unit
 ) {
     val closes = remember(candles) { candles.map { it.close } }
-    val ema9 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 9) }
-    val ema21 = remember(closes) { IndicatorCalculator.calculateEMA(closes, 21) }
+    val ema9 = if (precomputedEma9.size == candles.size) precomputedEma9 else remember(closes) { IndicatorCalculator.calculateEMA(closes, 9) }
+    val ema21 = if (precomputedEma21.size == candles.size) precomputedEma21 else remember(closes) { IndicatorCalculator.calculateEMA(closes, 21) }
     val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
 
     // Candle Countdown Timer state (updates every second)
@@ -1653,8 +1520,9 @@ fun CandlestickChart(
             val displayCandles = if (visibleCandles.isNotEmpty()) visibleCandles else candles
             val minP = displayCandles.minOf { it.low }
             val maxP = displayCandles.maxOf { it.high }
-            val padding = (maxP - minP) * 0.08
-            val minPrice = (minP - padding).coerceAtLeast(0.0001)
+            val rawRange = maxOf(maxP - minP, if (instrument == TradingInstrument.XAUUSD) 0.60 else 0.00030)
+            val padding = rawRange * 0.08
+            val minPrice = (minP - padding).coerceAtLeast(0.00001)
             val maxPrice = maxP + padding
             val priceRange = maxOf(maxPrice - minPrice, 0.00001)
 
@@ -1668,7 +1536,7 @@ fun CandlestickChart(
             // ==========================================
             val gridCount = 5
             val textPaint = android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(180, 160, 170, 190)
+                color = android.graphics.Color.argb(190, 165, 175, 195)
                 textSize = 9.sp.toPx()
                 isAntiAlias = true
                 typeface = android.graphics.Typeface.MONOSPACE
@@ -1677,10 +1545,11 @@ fun CandlestickChart(
             for (i in 0..gridCount) {
                 val y = (chartH / gridCount) * i
                 val priceAtY = maxPrice - (i.toDouble() / gridCount) * priceRange
+                val roundedPriceAtY = CandleNormalizer.roundPrice(priceAtY, instrument)
 
                 // Grid line across chart area
                 drawLine(
-                    color = Color.White.copy(alpha = 0.06f),
+                    color = Color.White.copy(alpha = 0.05f),
                     start = Offset(0f, y),
                     end = Offset(chartW, y),
                     strokeWidth = 1f
@@ -1688,7 +1557,7 @@ fun CandlestickChart(
 
                 // Right price text label
                 drawContext.canvas.nativeCanvas.drawText(
-                    instrument.formatPrice(priceAtY),
+                    instrument.formatPrice(roundedPriceAtY),
                     chartW + 6.dp.toPx(),
                     y + 3.dp.toPx(),
                     textPaint
@@ -1714,13 +1583,13 @@ fun CandlestickChart(
             val vCount = displayCandles.size
             if (vCount == 0) return@Canvas
             val candleSlotWidth = chartW / vCount
-            val bodyWidth = (candleSlotWidth * 0.70f).coerceAtLeast(1.5f)
+            val bodyWidth = (candleSlotWidth * 0.72f).coerceIn(2.5f, 22f)
 
             // ==========================================
             // 2. VERTICAL GRID LINES & BOTTOM TIME LABELS
             // ==========================================
             val timeStep = (vCount / 5).coerceAtLeast(1)
-            val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+            val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
             for (i in 0 until vCount step timeStep) {
                 val candle = displayCandles[i]
                 val x = (i * candleSlotWidth) + (candleSlotWidth / 2f)
@@ -1737,7 +1606,7 @@ fun CandlestickChart(
                 val timeLabel = timeFormat.format(Date(candle.timestamp))
                 drawContext.canvas.nativeCanvas.drawText(
                     timeLabel,
-                    x - 12.dp.toPx(),
+                    x - 14.dp.toPx(),
                     chartH + 16.dp.toPx(),
                     textPaint
                 )
@@ -1787,7 +1656,7 @@ fun CandlestickChart(
             // 4. DRAW VISIBLE CANDLESTICKS & VOLUME HISTOGRAM
             // ==========================================
             val maxVolume = displayCandles.maxOfOrNull { it.volume }?.coerceAtLeast(1.0) ?: 1.0
-            val volumeAreaHeight = chartH * 0.18f
+            val volumeAreaHeight = chartH * 0.16f
 
             for (i in 0 until vCount) {
                 val candle = displayCandles[i]
@@ -1796,10 +1665,10 @@ fun CandlestickChart(
                 val color = if (isBull) BuyGreen else SellRed
 
                 // Subtle Volume Histogram bar at chart bottom (MT5 / TradingView style)
-                val volRatio = (candle.volume / maxVolume).toFloat().coerceIn(0.05f, 1f)
+                val volRatio = (candle.volume / maxVolume).toFloat().coerceIn(0.04f, 1f)
                 val volBarH = volRatio * volumeAreaHeight
                 drawRect(
-                    color = color.copy(alpha = 0.22f),
+                    color = color.copy(alpha = 0.18f),
                     topLeft = Offset(xCenter - (bodyWidth / 2f), chartH - volBarH),
                     size = Size(bodyWidth, volBarH)
                 )
@@ -1812,7 +1681,7 @@ fun CandlestickChart(
                 val bodyTop = minOf(yOpen, yClose)
                 val bodyHeight = maxOf(abs(yOpen - yClose), 1.5f)
 
-                // Wick
+                // Wick (anti-aliased line through center)
                 drawLine(
                     color = color,
                     start = Offset(xCenter, yHigh),
@@ -1820,12 +1689,22 @@ fun CandlestickChart(
                     strokeWidth = 1.5f
                 )
 
-                // Body
+                // Solid Body
                 drawRect(
                     color = color,
                     topLeft = Offset(xCenter - (bodyWidth / 2f), bodyTop),
                     size = Size(bodyWidth, bodyHeight)
                 )
+
+                // High-definition stroke for wide zoom
+                if (candleSlotWidth >= 10.dp.toPx()) {
+                    drawRect(
+                        color = color.copy(alpha = 0.9f),
+                        topLeft = Offset(xCenter - (bodyWidth / 2f), bodyTop),
+                        size = Size(bodyWidth, bodyHeight),
+                        style = Stroke(width = 1f)
+                    )
+                }
             }
 
             // ==========================================

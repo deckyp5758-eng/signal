@@ -11,6 +11,8 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.SignalEntity
 import com.example.data.local.TradePlanEntity
 import com.example.data.model.*
+import com.example.service.ChartDataEngine
+import com.example.service.ChartRenderState
 import com.example.service.ScalpingSignalEngine
 import com.example.service.SignalNotificationHelper
 import com.example.service.UpdateState
@@ -19,7 +21,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 enum class AppTab(val title: String) {
-    SIGNALS("Sinyal"),
     CHARTS("Grafik"),
     CALENDAR("Kalender"),
     RISK_MANAGER("Risiko & SL/TP"),
@@ -50,6 +51,14 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     val calendarService = com.example.service.EconomicCalendarService()
     val githubUpdateService = com.example.service.GitHubUpdateService(application)
 
+    // Background Chart Calculation & Rendering Engine (Dispatchers.Default)
+    val chartDataEngine = ChartDataEngine(
+        normalizerService = engine.normalizerService,
+        scope = viewModelScope,
+        calculationDispatcher = Dispatchers.Default
+    )
+    val chartRenderState: StateFlow<ChartRenderState> = chartDataEngine.renderState
+
     // GitHub Auto-Update State
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
@@ -74,7 +83,7 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     val newsShield: StateFlow<NewsShieldStatus> = _newsShield.asStateFlow()
 
     // Current navigation tab
-    private val _currentTab = MutableStateFlow(AppTab.SIGNALS)
+    private val _currentTab = MutableStateFlow(AppTab.CHARTS)
     val currentTab: StateFlow<AppTab> = _currentTab.asStateFlow()
 
     // Selected instrument
@@ -167,6 +176,35 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
                 slPipsText = "25"
             )
         }
+
+        // Background Chart Calculation Pipeline (Dispatchers.Default)
+        // Automatically recomputes candle normalization, indicators, and SMC patterns in the background
+        viewModelScope.launch(Dispatchers.Default) {
+            combine(
+                _selectedInstrument,
+                _selectedTimeframe,
+                engine.candlesVersion
+            ) { inst, tf, _ ->
+                Pair(inst, tf)
+            }.collect { (inst, tf) ->
+                triggerChartCalculation(inst, tf)
+            }
+        }
+    }
+
+    fun triggerChartCalculation(
+        inst: TradingInstrument = _selectedInstrument.value,
+        tf: Timeframe = _selectedTimeframe.value
+    ) {
+        val livePrice = if (inst == TradingInstrument.XAUUSD) engine.xauPrice.value else engine.eurPrice.value
+        val rawCandles = engine.getCandles(inst, tf)
+        chartDataEngine.computeChartDataAsync(
+            rawCandles = rawCandles,
+            instrument = inst,
+            timeframe = tf,
+            livePriceRef = livePrice,
+            candleMapProvider = { i, t -> engine.getCandles(i, t) }
+        )
     }
 
     fun refreshCalendar() {

@@ -17,7 +17,7 @@ enum class TradingInstrument(
         decimalDigits = 2,
         pipMultiplier = 0.1, // 1 pip = 0.10 USD pada Gold
         contractSize = 100.0,
-        defaultPrice = 2654.50,
+        defaultPrice = 4145.50,
         defaultSpreadPips = 1.2
     ),
     EURUSD(
@@ -27,7 +27,7 @@ enum class TradingInstrument(
         decimalDigits = 5,
         pipMultiplier = 0.0001, // 1 pip = 0.00010 EUR
         contractSize = 100000.0,
-        defaultPrice = 1.08425,
+        defaultPrice = 1.13750,
         defaultSpreadPips = 0.3
     );
 

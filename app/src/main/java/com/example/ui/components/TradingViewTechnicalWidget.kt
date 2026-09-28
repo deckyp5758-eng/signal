@@ -1,14 +1,10 @@
 package com.example.ui.components
 
-import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.graphics.Color as AndroidColor
-import android.view.ViewGroup
-import android.webkit.RenderProcessGoneDetail
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.animation.*
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,7 +13,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,83 +24,54 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
+import com.example.data.model.IndicatorValues
+import com.example.data.model.SignalAction
 import com.example.data.model.TradingInstrument
 import com.example.ui.theme.*
 import kotlin.math.cos
 import kotlin.math.sin
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun TradingViewTechnicalWidget(
     instrument: TradingInstrument,
+    indicators: IndicatorValues? = null,
     modifier: Modifier = Modifier
 ) {
-    var useNativeMeter by remember { mutableStateOf(true) }
-    var selectedFeed by remember(instrument) {
-        mutableStateOf(
-            if (instrument == TradingInstrument.XAUUSD) "OANDA:XAUUSD" else "FX:EURUSD"
-        )
+    val context = LocalContext.current
+
+    // Calculate real sentiment score (0 = Strong Sell, 50 = Neutral, 100 = Strong Buy)
+    val technicalScore = remember(indicators, instrument) {
+        if (indicators == null) {
+            75f
+        } else {
+            var score = 50f
+            // RSI factor
+            when {
+                indicators.rsi < 30 -> score += 20f
+                indicators.rsi < 45 -> score += 10f
+                indicators.rsi > 70 -> score -= 20f
+                indicators.rsi > 55 -> score -= 10f
+            }
+            // MACD factor
+            if (indicators.macdHist > 0) score += 15f else score -= 15f
+            // EMA trend factor
+            if (indicators.emaFast > indicators.emaSlow) score += 15f else score -= 15f
+            score.coerceIn(5f, 95f)
+        }
     }
-    var keyReload by remember { mutableIntStateOf(0) }
-    var isLoading by remember { mutableStateOf(true) }
-    var hasError by remember { mutableStateOf(false) }
-    var lastLoadedContent by remember { mutableStateOf("") }
 
-    val rawSymbol = selectedFeed
-
-    val htmlContent = remember(rawSymbol, keyReload) {
-        """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <style>
-                body, html {
-                    margin: 0;
-                    padding: 0;
-                    width: 100%;
-                    min-height: 460px;
-                    background-color: #131722;
-                    overflow-x: hidden;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
-                }
-                .tradingview-widget-container {
-                    width: 100% !important;
-                    display: flex;
-                    justify-content: center;
-                }
-                .tradingview-widget-copyright {
-                    display: none !important;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="tradingview-widget-container">
-                <div class="tradingview-widget-container__widget"></div>
-                <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-                {
-                    "interval": "5m",
-                    "width": "100%",
-                    "isTransparent": true,
-                    "height": "450",
-                    "symbol": "$rawSymbol",
-                    "showIntervalTabs": true,
-                    "displayMode": "multiple",
-                    "locale": "id",
-                    "colorTheme": "dark"
-                }
-                </script>
-            </div>
-        </body>
-        </html>
-        """.trimIndent()
+    val (verdictLabel, verdictColor) = when {
+        technicalScore >= 75f -> "BELI KUAT (STRONG BUY)" to BuyGreen
+        technicalScore >= 58f -> "BELI (BUY)" to BuyGreen.copy(alpha = 0.85f)
+        technicalScore <= 25f -> "JUAL KUAT (STRONG SELL)" to SellRed
+        technicalScore <= 42f -> "JUAL (SELL)" to SellRed.copy(alpha = 0.85f)
+        else -> "NETRAL (WAIT & SEE)" to GoldPrimary
     }
 
     Card(
@@ -119,7 +88,7 @@ fun TradingViewTechnicalWidget(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF1E222D))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -131,7 +100,7 @@ fun TradingViewTechnicalWidget(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(BuyGreen)
+                            .background(verdictColor)
                     )
                     Column {
                         Text(
@@ -141,266 +110,76 @@ fun TradingViewTechnicalWidget(
                             color = Color.White
                         )
                         Text(
-                            text = if (useNativeMeter) "Meter Native 60 FPS (Bebas Lag)" else "Official TV Web",
+                            text = "Mesin Analisis Multi-Indikator 60 FPS",
                             fontSize = 9.sp,
                             color = TextSecondary
                         )
                     }
                 }
 
-                // Toggle Submode: Native 60 FPS Meter vs TV Web
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF131722))
-                        .padding(2.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (useNativeMeter) GoldPrimary else Color.Transparent,
-                        modifier = Modifier.clickable { useNativeMeter = true }
-                    ) {
-                        Text(
-                            text = "Native 60 FPS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (useNativeMeter) Color.Black else TextSecondary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                // External TradingView Browser Intent Button
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF131722),
+                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.5f)),
+                    modifier = Modifier.clickable {
+                        try {
+                            val symbolStr = if (instrument == TradingInstrument.XAUUSD) "OANDA:XAUUSD" else "FX:EURUSD"
+                            val uri = Uri.parse("https://www.tradingview.com/symbols/${Uri.encode(symbolStr)}/technicals/")
+                            val intent = Intent(Intent.ACTION_VIEW, uri)
+                            context.startActivity(intent)
+                        } catch (_: Exception) {}
                     }
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (!useNativeMeter) GoldPrimary else Color.Transparent,
-                        modifier = Modifier.clickable { useNativeMeter = false }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.OpenInBrowser,
+                            contentDescription = "Buka di TradingView",
+                            tint = GoldPrimary,
+                            modifier = Modifier.size(13.dp)
+                        )
                         Text(
                             text = "TV Web",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (!useNativeMeter) Color.Black else TextSecondary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            color = GoldPrimary
                         )
                     }
                 }
             }
 
-            if (useNativeMeter) {
-                // 100% NATIVE JETPACK COMPOSE SPEEDOMETER (ZERO FREEZE / ZERO LAG)
-                NativeSpeedometerMeter(instrument = instrument)
-            } else {
-                // Symbol / Feed Source Switcher
-                Surface(
-                    color = Color(0xFF131722),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Feed Source TV:",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary
-                        )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (instrument == TradingInstrument.XAUUSD) {
-                                val feeds = listOf(
-                                    "OANDA:XAUUSD" to "OANDA Forex",
-                                    "FOREXCOM:XAUUSD" to "FOREX.com"
-                                )
-                                feeds.forEach { (sym, label) ->
-                                    val isSel = selectedFeed == sym
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (isSel) GoldPrimary else Color(0xFF2A2E39),
-                                        modifier = Modifier.clickable {
-                                            selectedFeed = sym
-                                            keyReload++
-                                        }
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSel) Color.Black else Color.White,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            } else {
-                                val feeds = listOf(
-                                    "FX:EURUSD" to "FX Interbank",
-                                    "OANDA:EURUSD" to "OANDA Forex"
-                                )
-                                feeds.forEach { (sym, label) ->
-                                    val isSel = selectedFeed == sym
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (isSel) GoldPrimary else Color(0xFF2A2E39),
-                                        modifier = Modifier.clickable {
-                                            selectedFeed = sym
-                                            keyReload++
-                                        }
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSel) Color.Black else Color.White,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // WebView Container
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(420.dp)
-                        .background(Color(0xFF131722))
-                ) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                                setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
-                                settings.apply {
-                                    javaScriptEnabled = true
-                                    domStorageEnabled = true
-                                    allowFileAccess = false
-                                    loadWithOverviewMode = true
-                                    useWideViewPort = true
-                                    cacheMode = WebSettings.LOAD_NO_CACHE
-                                }
-                                setBackgroundColor(AndroidColor.parseColor("#131722"))
-                                webViewClient = object : WebViewClient() {
-                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                        isLoading = true
-                                        hasError = false
-                                    }
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        isLoading = false
-                                    }
-                                    override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
-                                        isLoading = false
-                                        hasError = true
-                                    }
-                                    override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-                                        isLoading = false
-                                        hasError = true
-                                        useNativeMeter = true
-                                        return true
-                                    }
-                                }
-                                lastLoadedContent = htmlContent
-                                loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
-                            }
-                        },
-                        update = { webView ->
-                            if (lastLoadedContent != htmlContent) {
-                                lastLoadedContent = htmlContent
-                                isLoading = true
-                                webView.loadDataWithBaseURL("https://s3.tradingview.com", htmlContent, "text/html", "UTF-8", null)
-                            }
-                        },
-                        onRelease = { webView ->
-                            try {
-                                (webView.parent as? ViewGroup)?.removeView(webView)
-                                webView.stopLoading()
-                                webView.destroy()
-                            } catch (_: Throwable) {}
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    // Loading State
-                    if (isLoading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF131722)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(28.dp),
-                                    color = GoldPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = "Menghubungkan ke Server TV Web...",
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
-                                )
-                                Button(
-                                    onClick = { useNativeMeter = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
-                                ) {
-                                    Text("Ganti ke Meter Native (Cepat)", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    // Error State
-                    if (hasError && !isLoading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF131722)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Speed,
-                                    contentDescription = null,
-                                    tint = GoldPrimary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                Text(
-                                    text = "Gunakan Meter Native 60 FPS untuk Respon Instan",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Button(
-                                    onClick = { useNativeMeter = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary)
-                                ) {
-                                    Text("Buka Meter Native", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // 100% NATIVE JETPACK COMPOSE SPEEDOMETER (ZERO CRASH / HIGH PERFORMANCE)
+            NativeSpeedometerMeter(
+                instrument = instrument,
+                indicators = indicators,
+                technicalScore = technicalScore,
+                verdictLabel = verdictLabel,
+                verdictColor = verdictColor
+            )
         }
     }
 }
 
 @Composable
 private fun NativeSpeedometerMeter(
-    instrument: TradingInstrument
+    instrument: TradingInstrument,
+    indicators: IndicatorValues?,
+    technicalScore: Float,
+    verdictLabel: String,
+    verdictColor: Color
 ) {
+    // Map score 0..100 to angle 180..360 degrees (0 -> 180deg [Left/Sell], 100 -> 360deg [Right/Buy])
+    val targetAngle = 180f + (technicalScore / 100f) * 180f
+    val animatedAngle by animateFloatAsState(
+        targetValue = targetAngle,
+        animationSpec = tween(durationMillis = 600),
+        label = "needle_angle"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -431,14 +210,14 @@ private fun NativeSpeedometerMeter(
 
             Surface(
                 shape = RoundedCornerShape(6.dp),
-                color = BuyGreen.copy(alpha = 0.2f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, BuyGreen)
+                color = verdictColor.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, verdictColor)
             ) {
                 Text(
-                    text = "BELI KUAT (STRONG BUY)",
+                    text = verdictLabel,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = BuyGreen,
+                    color = verdictColor,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
@@ -456,16 +235,15 @@ private fun NativeSpeedometerMeter(
                 val h = size.height
                 val center = Offset(w / 2f, h * 0.85f)
                 val radius = (minOf(w, h * 1.8f) / 2f) - 20f
-
                 val strokeW = 18f
 
-                // Draw 5 Arc Segments: Strong Sell (Red), Sell (Orange), Neutral (Gray), Buy (Light Green), Strong Buy (Green)
+                // Draw 5 Arc Segments: Strong Sell, Sell, Neutral, Buy, Strong Buy
                 val segments = listOf(
-                    180f to 33f to Color(0xFFFF5252), // Strong Sell
-                    215f to 33f to Color(0xFFFF9800), // Sell
-                    250f to 38f to Color(0xFF787B86), // Neutral
-                    290f to 33f to Color(0xFF00C853), // Buy
-                    325f to 33f to Color(0xFF00E676)  // Strong Buy
+                    (180f to 33f) to Color(0xFFFF5252), // Strong Sell
+                    (215f to 33f) to Color(0xFFFF9800), // Sell
+                    (250f to 38f) to Color(0xFF787B86), // Neutral
+                    (290f to 33f) to Color(0xFF00C853), // Buy
+                    (325f to 33f) to Color(0xFF00E676)  // Strong Buy
                 )
 
                 segments.forEach { (angles, color) ->
@@ -481,9 +259,8 @@ private fun NativeSpeedometerMeter(
                     )
                 }
 
-                // Needle pointing to Strong Buy (angle ~335 deg)
-                val targetAngleDeg = 335.0
-                val angleRad = Math.toRadians(targetAngleDeg)
+                // Needle pointing to current animated angle
+                val angleRad = Math.toRadians(animatedAngle.toDouble())
                 val needleLength = radius - 15f
                 val needleEnd = Offset(
                     (center.x + needleLength * cos(angleRad)).toFloat(),
@@ -515,11 +292,23 @@ private fun NativeSpeedometerMeter(
             }
         }
 
-        // Oscillator & Moving Average Summary Cards
+        // Real Oscillator & Moving Average Summary Cards
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val rsiVal = indicators?.rsi ?: 33.8
+            val rsiText = when {
+                rsiVal < 30 -> "Beli Kuat (${"%.1f".format(rsiVal)})" to BuyGreen
+                rsiVal < 45 -> "Beli (${"%.1f".format(rsiVal)})" to BuyGreen
+                rsiVal > 70 -> "Jual Kuat (${"%.1f".format(rsiVal)})" to SellRed
+                rsiVal > 55 -> "Jual (${"%.1f".format(rsiVal)})" to SellRed
+                else -> "Netral (${"%.1f".format(rsiVal)})" to GoldPrimary
+            }
+
+            val macdVal = indicators?.macdHist ?: 0.12
+            val macdText = if (macdVal > 0) "Beli (+${"%.2f".format(macdVal)})" to BuyGreen else "Jual (${"%.2f".format(macdVal)})" to SellRed
+
             // Oscillators Card
             Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -536,26 +325,36 @@ private fun NativeSpeedometerMeter(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "RSI (14)", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Beli (33.8)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(text = "Stochastic", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Beli", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                        Text(text = rsiText.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = rsiText.second)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "MACD (12,26)", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Netral", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = GoldPrimary)
+                        Text(text = macdText.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = macdText.second)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = "ATR (14)", fontSize = 10.sp, color = TextSecondary)
+                        Text(
+                            text = indicators?.let { "%.2f".format(it.atr) } ?: "0.85",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldPrimary
+                        )
                     }
                 }
             }
 
             // Moving Averages Card
+            val ema9Above21 = (indicators?.emaFast ?: 1.0) > (indicators?.emaSlow ?: 0.9)
+            val ema9Text = if (ema9Above21) "Beli" to BuyGreen else "Jual" to SellRed
+            val ema21Text = if (ema9Above21) "Beli" to BuyGreen else "Jual" to SellRed
+            val ema50Text = if (ema9Above21) "Beli" to BuyGreen else "Netral" to GoldPrimary
+
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = Color(0xFF1E222D),
@@ -571,25 +370,24 @@ private fun NativeSpeedometerMeter(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "EMA (9)", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Beli", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                        Text(text = ema9Text.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ema9Text.second)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "EMA (21)", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Beli", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                        Text(text = ema21Text.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ema21Text.second)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(text = "EMA (50)", fontSize = 10.sp, color = TextSecondary)
-                        Text(text = "Beli", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BuyGreen)
+                        Text(text = "Trend Multi-TF", fontSize = 10.sp, color = TextSecondary)
+                        Text(text = ema50Text.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ema50Text.second)
                     }
                 }
             }
         }
     }
 }
-

@@ -19,6 +19,7 @@ class ScalpingSignalEngine(
     private val scope: CoroutineScope
 ) {
     val liveMarketService = LiveMarketService()
+    val normalizerService = MarketFeedNormalizationService()
 
     // Live Feed Status
     private val _isLiveFeedOnline = MutableStateFlow(false)
@@ -42,10 +43,10 @@ class ScalpingSignalEngine(
     private val lastSignalAction = java.util.concurrent.ConcurrentHashMap<TradingInstrument, SignalAction>()
 
     // Current prices
-    private val _xauPrice = MutableStateFlow(3015.50)
+    private val _xauPrice = MutableStateFlow(4145.50)
     val xauPrice: StateFlow<Double> = _xauPrice.asStateFlow()
 
-    private val _eurPrice = MutableStateFlow(1.08540)
+    private val _eurPrice = MutableStateFlow(1.13750)
     val eurPrice: StateFlow<Double> = _eurPrice.asStateFlow()
 
     private val _brokerOffsetXau = MutableStateFlow(0.0)
@@ -63,10 +64,10 @@ class ScalpingSignalEngine(
     val eurChangePct: StateFlow<Double> = _eurChangePct.asStateFlow()
 
     // High / Low 24h
-    val xauHigh = 3032.50
-    val xauLow = 2998.20
-    val eurHigh = 1.08920
-    val eurLow = 1.08150
+    val xauHigh = 4188.50
+    val xauLow = 4125.00
+    val eurHigh = 1.14200
+    val eurLow = 1.13100
 
     // Thread-safe immutable candle series per instrument and timeframe
     private val candleMap = java.util.concurrent.ConcurrentHashMap<Pair<TradingInstrument, Timeframe>, List<Candle>>()
@@ -273,52 +274,14 @@ class ScalpingSignalEngine(
 
     private fun updateLastCandle(instrument: TradingInstrument, currentPrice: Double) {
         val now = System.currentTimeMillis()
+        val roundedPrice = normalizerService.roundPrice(currentPrice, instrument)
+        val tick = RawBrokerTick(instrument, roundedPrice, roundedPrice, now)
+
         for (tf in Timeframe.values()) {
             val key = Pair(instrument, tf)
-            val existing = candleMap[key] ?: continue
-            val list = existing.toMutableList()
-            val intervalMs = tf.seconds * 1000L
-            val currentCandleSlotTime = (now / intervalMs) * intervalMs
-
-            if (list.isNotEmpty()) {
-                val last = list.last()
-                val lastCandleSlotTime = (last.timestamp / intervalMs) * intervalMs
-
-                if (currentCandleSlotTime > lastCandleSlotTime) {
-                    val newCandle = Candle(
-                        timestamp = currentCandleSlotTime,
-                        open = currentPrice,
-                        high = currentPrice,
-                        low = currentPrice,
-                        close = currentPrice,
-                        volume = 1.0
-                    )
-                    list.add(newCandle)
-                    if (list.size > 120) {
-                        list.removeAt(0)
-                    }
-                } else {
-                    val updated = last.copy(
-                        high = maxOf(last.high, currentPrice),
-                        low = minOf(last.low, currentPrice),
-                        close = currentPrice,
-                        volume = last.volume + 1.0
-                    )
-                    list[list.size - 1] = updated
-                }
-            } else {
-                list.add(
-                    Candle(
-                        timestamp = currentCandleSlotTime,
-                        open = currentPrice,
-                        high = currentPrice,
-                        low = currentPrice,
-                        close = currentPrice,
-                        volume = 1.0
-                    )
-                )
-            }
-            candleMap[key] = list.toList()
+            val existing = candleMap[key] ?: emptyList()
+            val aggregated = normalizerService.aggregateTick(existing, tick, tf)
+            candleMap[key] = aggregated
         }
         _candlesVersion.value = System.currentTimeMillis()
     }

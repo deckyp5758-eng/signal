@@ -30,13 +30,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.TradingInstrument
 import com.example.ui.components.AppHeader
-import com.example.ui.components.InAppSignalBanner
 import com.example.ui.components.InstrumentSelector
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.ChartsScreen
 import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.RiskManagerScreen
-import com.example.ui.screens.SignalsScreen
 import com.example.ui.screens.TutorialScreen
 import com.example.ui.theme.DarkBackground
 import com.example.ui.theme.GoldPrimary
@@ -97,6 +95,7 @@ fun MainAppScreen(viewModel: TradingViewModel) {
     val githubRepoOwner by viewModel.githubRepoOwner.collectAsStateWithLifecycle()
     val githubRepoName by viewModel.githubRepoName.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val chartRenderState by viewModel.chartRenderState.collectAsStateWithLifecycle()
 
     val xauPrice by viewModel.engine.xauPrice.collectAsStateWithLifecycle()
     val eurPrice by viewModel.engine.eurPrice.collectAsStateWithLifecycle()
@@ -166,25 +165,6 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 6.dp
             ) {
-                // Tab Sinyal
-                NavigationBarItem(
-                    selected = currentTab == AppTab.SIGNALS,
-                    onClick = { viewModel.selectTab(AppTab.SIGNALS) },
-                    icon = {
-                        Icon(
-                            imageVector = if (currentTab == AppTab.SIGNALS) Icons.Default.Bolt else Icons.Outlined.Bolt,
-                            contentDescription = "Sinyal Trading"
-                        )
-                    },
-                    label = { Text("Sinyal", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = GoldPrimary,
-                        selectedTextColor = GoldPrimary,
-                        indicatorColor = GoldPrimary.copy(alpha = 0.2f)
-                    ),
-                    modifier = Modifier.testTag("tab_signals")
-                )
-
                 // Tab Grafik
                 NavigationBarItem(
                     selected = currentTab == AppTab.CHARTS,
@@ -192,10 +172,10 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                     icon = {
                         Icon(
                             imageVector = if (currentTab == AppTab.CHARTS) Icons.Default.CandlestickChart else Icons.Outlined.CandlestickChart,
-                            contentDescription = "Grafik Live"
+                            contentDescription = "Grafik & Pola"
                         )
                     },
-                    label = { Text("Grafik", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                    label = { Text("Grafik & Pola", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = GoldPrimary,
                         selectedTextColor = GoldPrimary,
@@ -288,34 +268,30 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 .padding(innerPadding)
         ) {
             when (currentTab) {
-                AppTab.SIGNALS -> {
-                    SignalsScreen(
-                        selectedInstrument = selectedInstrument,
-                        currentPrice = currentPrice,
-                        activeSignal = activeSignal,
-                        indicators = currentIndicators,
-                        signalHistory = signalsHistory,
-                        onCopySignal = { text, label -> viewModel.copyToClipboard(text, label) },
-                        onApplyToRiskManager = { signal -> viewModel.syncRiskWithSignal(signal) },
-                        onScanMarket = { viewModel.manualScan() },
-                        onClearHistory = { viewModel.clearSignalsHistory() },
-                        newsShield = newsShield,
-                        onOpenCalendar = { viewModel.selectTab(AppTab.CALENDAR) }
-                    )
-                }
                 AppTab.CHARTS -> {
-                    androidx.activity.compose.BackHandler {
-                        viewModel.selectTab(AppTab.SIGNALS)
-                    }
                     val candlesVersion by viewModel.engine.candlesVersion.collectAsStateWithLifecycle()
-                    val chartCandles = remember(selectedInstrument, selectedTimeframe, candlesVersion) {
-                        viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
+                    val chartCandles = if (chartRenderState.candles.isNotEmpty() && 
+                        chartRenderState.instrument == selectedInstrument && 
+                        chartRenderState.timeframe == selectedTimeframe) {
+                        chartRenderState.candles
+                    } else {
+                        remember(selectedInstrument, selectedTimeframe, candlesVersion) {
+                            viewModel.engine.getCandles(selectedInstrument, selectedTimeframe)
+                        }
                     }
-                    val htfCandles = remember(selectedInstrument, candlesVersion) {
-                        viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
+                    val htfCandles = if (chartRenderState.htfCandles.isNotEmpty() && chartRenderState.instrument == selectedInstrument) {
+                        chartRenderState.htfCandles
+                    } else {
+                        remember(selectedInstrument, candlesVersion) {
+                            viewModel.engine.getCandles(selectedInstrument, com.example.data.model.Timeframe.H1)
+                        }
                     }
-                    val multiTimeframeTrends = remember(selectedInstrument, candlesVersion) {
-                        viewModel.getMultiTimeframeTrends(selectedInstrument)
+                    val multiTimeframeTrends = if (chartRenderState.multiTimeframeTrends.isNotEmpty() && chartRenderState.instrument == selectedInstrument) {
+                        chartRenderState.multiTimeframeTrends
+                    } else {
+                        remember(selectedInstrument, candlesVersion) {
+                            viewModel.getMultiTimeframeTrends(selectedInstrument)
+                        }
                     }
                     ChartsScreen(
                         instrument = selectedInstrument,
@@ -333,6 +309,9 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         htfCandles = htfCandles,
                         selectedGradeFilter = selectedGradeFilter,
                         filterOnlyHtfAligned = filterOnlyHtfAligned,
+                        precomputedPatterns = if (chartRenderState.instrument == selectedInstrument && chartRenderState.timeframe == selectedTimeframe) chartRenderState.detectedPatterns else emptyList(),
+                        precomputedEma9 = if (chartRenderState.instrument == selectedInstrument && chartRenderState.timeframe == selectedTimeframe) chartRenderState.ema9 else emptyList(),
+                        precomputedEma21 = if (chartRenderState.instrument == selectedInstrument && chartRenderState.timeframe == selectedTimeframe) chartRenderState.ema21 else emptyList(),
                         onSelectTimeframe = { viewModel.selectTimeframe(it) },
                         onToggleEma = { viewModel.toggleEma() },
                         onToggleBollinger = { viewModel.toggleBollinger() },
@@ -359,13 +338,13 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                         },
                         isLiveOnline = isLiveFeedOnline,
                         latencyMs = latencyMs,
-                        isScanning = isScanning,
+                        isScanning = isScanning || chartRenderState.isCalculating,
                         onRefreshScan = { viewModel.refreshChartAndScan() }
                     )
                 }
                 AppTab.CALENDAR -> {
                     androidx.activity.compose.BackHandler {
-                        viewModel.selectTab(AppTab.SIGNALS)
+                        viewModel.selectTab(AppTab.CHARTS)
                     }
                     CalendarScreen(
                         events = calendarEvents,
@@ -376,7 +355,7 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 }
                 AppTab.RISK_MANAGER -> {
                     androidx.activity.compose.BackHandler {
-                        viewModel.selectTab(AppTab.SIGNALS)
+                        viewModel.selectTab(AppTab.CHARTS)
                     }
                     val calculatedRisk = remember(riskInput, selectedInstrument, currentPrice) {
                         viewModel.calculateCurrentRisk()
@@ -395,13 +374,13 @@ fun MainAppScreen(viewModel: TradingViewModel) {
                 }
                 AppTab.DIAGNOSTICS -> {
                     androidx.activity.compose.BackHandler {
-                        viewModel.selectTab(AppTab.SIGNALS)
+                        viewModel.selectTab(AppTab.CHARTS)
                     }
                     DiagnosticsScreen(viewModel = viewModel)
                 }
                 AppTab.TUTORIAL -> {
                     androidx.activity.compose.BackHandler {
-                        viewModel.selectTab(AppTab.SIGNALS)
+                        viewModel.selectTab(AppTab.CHARTS)
                     }
                     TutorialScreen(
                         updateState = updateState,

@@ -226,7 +226,8 @@ fun SignalsScreen(
                 // Official TradingView Technical Analysis Speedometer Widget
                 item {
                     TradingViewTechnicalWidget(
-                        instrument = selectedInstrument
+                        instrument = selectedInstrument,
+                        indicators = indicators
                     )
                 }
 
